@@ -86,3 +86,7 @@ class Snapshot(object):
 
     def get_path(self, filename):
         return os.path.join(self.path, filename)
+
+
+def t2n(t):
+    return t.to('cpu').numpy()
