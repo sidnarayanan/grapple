@@ -1,0 +1,6 @@
+minbias: /local/pu_data/lhc14-pythia8-4C-minbias-nev1e6.pu14 
+hard: /local/pu_data/lhc14-pythia8-4C-dijet50-nev1e5.pu14 
+npu: 10 
+output: /local/grapple/v0/ 
+nmax: 100000
+nperfile: 5000
