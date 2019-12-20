@@ -1,11 +1,11 @@
 dataset_pattern: /local/grapple/data/v0/2019_12_18_20_49_41/data_0.npz
 output: /local/grapple/results/v0/
 n_epochs: 5
-embedding_size: 3 
-hidden_size: 4
-intermediate_size: 5
+embedding_size: 32 
+hidden_size: 32
+intermediate_size: 32
 feature_size: 5
 label_size: 2
-num_hidden_layers: 4 
-num_attention_heads: 1
-batch_size: 2
+num_hidden_layers: 4
+num_attention_heads: 4
+batch_size: 8

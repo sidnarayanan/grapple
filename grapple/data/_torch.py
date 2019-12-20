@@ -12,7 +12,7 @@ class PUDataset(IterableDataset):
 
     def __iter__(self):
         np.random.shuffle(self._files)
-        for f in tqdm(self._files, leave=False):
+        for f in self._files:
             data = np.load(f)
             X = data['x']
             Y = data['y']

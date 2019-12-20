@@ -11,8 +11,9 @@ p.add_args(
 config = p.parse_args()
 
 
-from grapple.model import Joe
 from grapple.data import PUDataset, DataLoader
+from grapple.metrics import Metrics
+from grapple.model import Joe
 
 from tqdm import tqdm, trange
 from loguru import logger
@@ -36,28 +37,28 @@ if __name__ == '__main__':
     model = model.to(device)
 
     opt = torch.optim.Adam(model.parameters())
-    loss_fn = nn.CrossEntropyLoss()
+    metrics = Metrics()
 
-    for e in trange(config.n_epochs):
+    for e in range(config.n_epochs):
         logger.info(f'Epoch {e}: Start')
 
         model.train()
-        n_steps = 0
-        total_loss = 0
+        metrics.reset()
         for batch in dl:
-            x, y, m = [torch.Tensor(t).to(device) for t in batch]
+            x = torch.Tensor(batch[0]).to(device)
+            y = torch.LongTensor(batch[1]).to(device)
+            m = torch.LongTensor(batch[2]).to(device)
             
             opt.zero_grad()
             yhat = model(x, mask=m)
-            loss = loss_fn(yhat, y)
+            loss, _ = metrics.compute(yhat, y)
             loss.backward()
 
             torch.nn.utils.clip_grad_norm_(model.parameters(), 5)
 
             opt.step()
 
-            total_loss += t2n(loss).mean()
-            n_steps += 1
-
-        logger.info(f'Epoch {e}: Loss = {total_loss/n_steps}')
+        avg_loss, avg_acc, avg_posacc, avg_negacc = metrics.mean()
+        logger.info(f'Epoch {e}: Loss = {avg_loss}; Accuracy = {avg_acc}')
+        logger.info(f'Epoch {e}: Hard ID = {avg_posacc}; PU ID = {avg_negacc}')
 

@@ -89,4 +89,4 @@ class Snapshot(object):
 
 
 def t2n(t):
-    return t.to('cpu').numpy()
+    return t.to('cpu').detach().numpy()
