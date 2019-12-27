@@ -22,7 +22,7 @@ class Opt(dict):
 
 
 class ArgumentParser(_AP):
-    STORE_TRUE = Opt({'action':'store_true'})
+    STORE_TRUE = Opt({'action':'store_true', 'default': None})
     STORE_FALSE = Opt({'action':'store_false'})
     MANY = Opt({'nargs':'+'})
     INT = Opt({'type': int})
@@ -44,8 +44,7 @@ class ArgumentParser(_AP):
         super().add_argument('-c', '--config', nargs='+', default=[])
 
     def add_arg(self, *args, **kwargs):
-        if 'default' in kwargs:
-            default = kwargs['default']
+        if 'default' in kwargs and 'action' not in kwargs:
             logger.error(f'default is not allowed in ArgumentParser')
             raise RuntimeError()
         return super().add_argument(*args, **kwargs)

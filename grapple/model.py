@@ -19,7 +19,7 @@ class Joe(nn.Module):
         config.hidden_act = "gelu_new"
 
         self.embedder = nn.Linear(config.feature_size, config.embedding_size)
-        self.encoder = Transformer(config)
+        self.encoders = nn.ModuleList([Transformer(config) for _ in range(config.num_encoders)])
         self.decoder = nn.Linear(config.hidden_size, config.label_size)
 
         self.config = config
@@ -34,7 +34,8 @@ class Joe(nn.Module):
 
         h = self.embedder(x) 
         h = torch.tanh(h)
-        h = self.encoder(h, mask, head_mask)[0]
+        for e in self.encoders:
+            h = e(h, mask, head_mask)[0]
         h = self.decoder(h) 
 
         return h

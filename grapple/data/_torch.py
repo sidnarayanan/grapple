@@ -9,6 +9,7 @@ from tqdm import tqdm
 class PUDataset(IterableDataset):
     def __init__(self, config):
         self._files = glob(config.dataset_pattern)
+        self.mask_charged = config.mask_charged
 
     def __iter__(self):
         np.random.shuffle(self._files)
@@ -23,7 +24,12 @@ class PUDataset(IterableDataset):
             for i in idx:
                 mask = (mask_base < N[i]).astype(int) 
                 y = (Y[i, :] == 0).astype(int)
-                yield X[i, :, :], y, mask 
+                y[~mask] = -1
+                x = X[i, :, :]
+                if self.mask_charged:
+                    q_mask = (x[:, -1] > -1)
+                    y[q_mask] = -1
+                yield x, y, mask 
 
     @staticmethod
     def collate_fn(samples):
