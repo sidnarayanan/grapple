@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-from grapple.data import Event, Record, Grid
+from grapple.data.cern import Event, Record, Grid
 from grapple.utils import * 
 
 import numpy as np

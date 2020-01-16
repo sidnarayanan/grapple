@@ -5,3 +5,4 @@ source $HOME/.local/bin/virtualenvwrapper.sh
 workon grapple
 
 export PYTHONPATH=${PYTHONPATH}:${PWD}
+export PATH=${PATH}:${PWD}/bin/

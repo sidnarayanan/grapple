@@ -1,6 +1,7 @@
 from argparse import SUPPRESS, ArgumentParser as _AP
 from loguru import logger
 import os
+import sys
 import time
 import yaml
 
@@ -22,7 +23,7 @@ class Opt(dict):
 
 
 class ArgumentParser(_AP):
-    STORE_TRUE = Opt({'action':'store_true', 'default': None})
+    STORE_TRUE = Opt({'action':'store_true'})
     STORE_FALSE = Opt({'action':'store_false'})
     MANY = Opt({'nargs':'+'})
     INT = Opt({'type': int})
@@ -44,7 +45,7 @@ class ArgumentParser(_AP):
         super().add_argument('-c', '--config', nargs='+', default=[])
 
     def add_arg(self, *args, **kwargs):
-        if 'default' in kwargs and 'action' not in kwargs:
+        if 'default' in kwargs:
             logger.error(f'default is not allowed in ArgumentParser')
             raise RuntimeError()
         return super().add_argument(*args, **kwargs)
@@ -78,9 +79,12 @@ class ArgumentParser(_AP):
 class Snapshot(object):
     def __init__(self, base_path, args):
         self.path = os.path.join(base_path, time.strftime("%Y_%m_%d_%H_%M_%S"))
+        logger.info(f'Snapshot placed at {self.path}')
         os.makedirs(self.path)
         self.args = args
         args.save_to(self.get_path('args.yaml'))
+        logger.remove()
+        logger.add(sys.stderr, level='INFO')
         logger.add(self.get_path('snapshot.log'), level='DEBUG')
 
     def get_path(self, filename):

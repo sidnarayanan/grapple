@@ -1,12 +1,15 @@
 import torch
 from torch import nn 
 from .utils import t2n 
+import matplotlib.pyplot as plt
+import numpy as np
 
 
 class Metrics(object):
     def __init__(self, device):
         self.loss_calc = nn.CrossEntropyLoss(
                 ignore_index=-1, 
+                reduction='none'
                 # weight=torch.FloatTensor([1, 5]).to(device)
             )
         self.reset()
@@ -20,9 +23,13 @@ class Metrics(object):
         self.n_particles = 0
         self.n_steps = 0
 
-    def compute(self, yhat, y):
+    def compute(self, yhat, y, w=None):
         # yhat = [batch, particles, labels]; y = [batch, particles]
         loss = self.loss_calc(yhat.view(-1, yhat.shape[-1]), y.view(-1))
+        if w is not None:
+            w = w.view(-1)
+            loss *= w
+        loss = torch.mean(loss)
         self.loss += t2n(loss).mean()
 
         mask = (y != -1)
@@ -54,3 +61,60 @@ class Metrics(object):
         return ([x / self.n_steps 
                  for x in [self.loss, self.acc, self.pos_acc, self.neg_acc]]
                 + [self.n_pos / self.n_particles])
+
+
+class METResolution(object):
+    def __init__(self, bins=np.linspace(-1, 1, 40)):
+        self.bins = bins
+        self.reset()
+
+    def reset(self):
+        self.dist = None
+        self.dist_p = None
+
+    @staticmethod
+    def _compute_res(pt, phi, w, gm):
+        pt = pt * w
+        px = pt * np.cos(phi)
+        py = pt * np.sin(phi)
+        metx = np.sum(px, axis=-1)
+        mety = np.sum(py, axis=-1)
+        met = np.sqrt(np.power(metx, 2) + np.power(mety, 2))
+        res = (met / gm) - 1
+        return res
+
+    def compute(self, pt, phi, w, puppi, gm):
+        res = self._compute_res(pt, phi, w, gm)
+        res_p = self._compute_res(pt, phi, puppi, gm)
+
+        hist, _ = np.histogram(res, bins=self.bins)
+        hist_p, _ = np.histogram(res_p, bins=self.bins)
+        if self.dist is None:
+            self.dist = hist
+            self.dist_p = hist_p
+        else:
+            self.dist += hist
+            self.dist_p += hist_p
+
+    @staticmethod 
+    def _compute_moments(x, dist):
+        dist = dist / np.sum(dist)
+        mean = np.sum(x * dist) / x.shape[0] 
+        var = np.sum(np.power(x - mean, 2) * dist) / x.shape[0]
+        return mean, var
+
+    def plot(self, path):
+        plt.clf()
+        x = (self.bins[:-1] + self.bins[1:]) * 0.5
+        plt.hist(x=x, weights=self.dist, label='Maierayanan', alpha=0.5, bins=self.bins)
+        plt.hist(x=x, weights=self.dist_p, label='Harris', alpha=0.5, bins=self.bins)
+        plt.xlabel('(Predicted-True)/True')
+        plt.legend()
+        for ext in ('pdf', 'png'):
+            plt.savefig(path + '.' + ext)
+
+        mean, var = self._compute_moments(x, self.dist)
+        mean_p, var_p = self._compute_moments(x, self.dist_p)
+        self.reset()
+
+        return {'model': (mean, np.sqrt(var)), 'puppi': (mean_p, np.sqrt(var_p))}
