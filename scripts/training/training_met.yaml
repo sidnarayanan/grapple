@@ -1,0 +1,16 @@
+dataset_pattern: /local/grapple/wjets/2020_04_04_14_11_22/*npz 
+output: /local/grapple/wjets/v0/
+n_epochs: 50
+embedding_size: 16
+hidden_size: 16
+intermediate_size: 16
+feature_size: 4 
+num_hidden_layers: 8 
+num_attention_heads: 4
+num_encoders: 1
+batch_size: 8 
+mask_charged: False 
+lr: 0.001
+lr_decay: 0.1
+min_met: 50
+plot: /home/snarayan/public_html/figs/grapple/wmn_1/

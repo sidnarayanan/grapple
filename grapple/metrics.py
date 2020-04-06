@@ -83,9 +83,9 @@ class METResolution(object):
         res = (met / gm) - 1
         return res
 
-    def compute(self, pt, phi, w, puppi, gm):
-        res = self._compute_res(pt, phi, w, gm)
-        res_p = self._compute_res(pt, phi, puppi, gm)
+    def compute(self, pt, phi, puppi, gm, pred):
+        res = (pred / gm) - 1
+        res_p = self._compute_res(pt, phi, np.ones_like(puppi), gm)
 
         hist, _ = np.histogram(res, bins=self.bins)
         hist_p, _ = np.histogram(res_p, bins=self.bins)
@@ -99,15 +99,15 @@ class METResolution(object):
     @staticmethod 
     def _compute_moments(x, dist):
         dist = dist / np.sum(dist)
-        mean = np.sum(x * dist) / x.shape[0] 
-        var = np.sum(np.power(x - mean, 2) * dist) / x.shape[0]
+        mean = np.sum(x * dist) 
+        var = np.sum(np.power(x - mean, 2) * dist) 
         return mean, var
 
     def plot(self, path):
         plt.clf()
         x = (self.bins[:-1] + self.bins[1:]) * 0.5
-        plt.hist(x=x, weights=self.dist, label='Maierayanan', alpha=0.5, bins=self.bins)
-        plt.hist(x=x, weights=self.dist_p, label='Harris', alpha=0.5, bins=self.bins)
+        plt.hist(x=x, weights=self.dist, label='Maierayanaschott', alpha=0.5, bins=self.bins)
+        plt.hist(x=x, weights=self.dist_p, label='PF', alpha=0.5, bins=self.bins)
         plt.xlabel('(Predicted-True)/True')
         plt.legend()
         for ext in ('pdf', 'png'):
@@ -118,3 +118,29 @@ class METResolution(object):
         self.reset()
 
         return {'model': (mean, np.sqrt(var)), 'puppi': (mean_p, np.sqrt(var_p))}
+
+
+class ParticleMETResolution(METResolution):
+    @staticmethod
+    def _compute_res(pt, phi, w, gm):
+        pt = pt * w
+        px = pt * np.cos(phi)
+        py = pt * np.sin(phi)
+        metx = np.sum(px, axis=-1)
+        mety = np.sum(py, axis=-1)
+        met = np.sqrt(np.power(metx, 2) + np.power(mety, 2))
+        res = (met / gm) - 1
+        return res
+
+    def compute(self, pt, phi, w, puppi, gm):
+        res = self._compute_res(pt, phi, w, gm)
+        res_p = self._compute_res(pt, phi, puppi, gm)
+
+        hist, _ = np.histogram(res, bins=self.bins)
+        hist_p, _ = np.histogram(res_p, bins=self.bins)
+        if self.dist is None:
+            self.dist = hist
+            self.dist_p = hist_p
+        else:
+            self.dist += hist
+            self.dist_p += hist_p

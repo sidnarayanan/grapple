@@ -27,6 +27,7 @@ class ArgumentParser(_AP):
     STORE_FALSE = Opt({'action':'store_false'})
     MANY = Opt({'nargs':'+'})
     INT = Opt({'type': int})
+    FLOAT = Opt({'type': float})
 
     class Namespace(object):
         def __init__(self):
