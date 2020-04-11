@@ -7,6 +7,8 @@ import numpy as np
 import os
 from tqdm import tqdm
 
+from loguru import logger
+
 
 parser = ArgumentParser()
 parser.add_args(
@@ -17,7 +19,11 @@ args = parser.parse_args()
 
 if __name__ == '__main__':
     snapshot = Snapshot(args.outdir, args)
-    for f in tqdm(args.infiles):
-        cms_to_grapple(
-            f, snapshot.get_path(os.path.split(f)[-1].replace('root', 'npz'))
-        )
+    for f in tqdm(args.infiles[:50]):
+        try:
+            cms_to_grapple(
+                f, snapshot.get_path(os.path.split(f)[-1].replace('root', 'npz'))
+            )
+        except Exception as e:
+            logger.debug(f)
+            logger.error(e)

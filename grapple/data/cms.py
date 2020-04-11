@@ -11,4 +11,4 @@ def cms_to_grapple(inpath, outpath):
     p = d['p']
     N = (x[:, :, 0] > 0).sum(axis=-1) 
     logger.info(f'Writing to {outpath}')
-    np.savez(outpath, x=x, y=y, N=N, q=q, p=p, met=d['met'])
+    np.savez(outpath, x=x, y=y, N=N, q=q, p=p, met=d['met'], pfmet=d['pfmet'], puppimet=d['puppimet'])

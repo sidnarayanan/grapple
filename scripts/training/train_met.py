@@ -10,7 +10,7 @@ p.add_args(
     ('--mask_charged', p.STORE_TRUE), ('--lr', {'type': float}),
     ('--lr_schedule', p.STORE_TRUE), '--plot',
     ('--min_met', p.FLOAT),
-    ('--pt_weight', p.STORE_TRUE)
+    ('--num_max_files', p.INT),
 )
 config = p.parse_args()
 
@@ -49,12 +49,12 @@ if __name__ == '__main__':
     summary(model, input_size=(16, config.feature_size))
 
     opt = torch.optim.Adam(model.parameters(), lr=config.lr)
-    # lr = torch.optim.lr_scheduler.ExponentialLR(opt, config.lr_decay)
-    lr = torch.optim.lr_scheduler.ReduceLROnPlateau(
-            opt, 
-            factor=config.lr_decay,
-            patience=3
-        )
+    lr = torch.optim.lr_scheduler.ExponentialLR(opt, config.lr_decay)
+    # lr = torch.optim.lr_scheduler.ReduceLROnPlateau(
+    #         opt, 
+    #         factor=config.lr_decay,
+    #         patience=3
+    #     )
     met = METResolution()
 
     # model, opt = amp.initialize(model, opt, opt_level='O1')
@@ -86,19 +86,19 @@ if __name__ == '__main__':
             avg_loss_tensor += loss 
 
             x = batch[0] 
-            puppi = batch[4]
             gm = batch[5] 
+            pf = batch[6]
             pt = x[:,:,0]
             phi = x[:,:,2]
             met.compute(
                     pt, phi,
-                    puppi, 
+                    pf, 
                     gm,
                     t2n(met_pred)
                 )
 
         avg_loss_tensor /= n_batch
-        lr.step(avg_loss_tensor)
+        lr.step()
 
         plot_path = f'{config.plot}/resolution_{e:03d}'
         ress = met.plot(plot_path)

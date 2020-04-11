@@ -64,7 +64,7 @@ class Metrics(object):
 
 
 class METResolution(object):
-    def __init__(self, bins=np.linspace(-1, 1, 40)):
+    def __init__(self, bins=np.linspace(-1, 2, 40)):
         self.bins = bins
         self.reset()
 
@@ -83,9 +83,9 @@ class METResolution(object):
         res = (met / gm) - 1
         return res
 
-    def compute(self, pt, phi, puppi, gm, pred):
+    def compute(self, pt, phi, pf, gm, pred):
         res = (pred / gm) - 1
-        res_p = self._compute_res(pt, phi, np.ones_like(puppi), gm)
+        res_p = (pf / gm) - 1
 
         hist, _ = np.histogram(res, bins=self.bins)
         hist_p, _ = np.histogram(res_p, bins=self.bins)

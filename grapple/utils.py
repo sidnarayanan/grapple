@@ -61,17 +61,20 @@ class ArgumentParser(_AP):
     def parse_args(self, *args, **kwargs):
         cmd_line_args = super().parse_args(*args, **kwargs)
         args = ArgumentParser.Namespace()
+        for k in vars(cmd_line_args):
+            v = getattr(cmd_line_args, k)
+            setattr(args, k, v)
         for conf in cmd_line_args.config:
             payload = yaml.safe_load(open(conf, 'r'))
             for k,v in payload.items():
                 setattr(args, k, v)
                 logger.debug(f'Config {conf} : {k} -> {v}')
-        for k in vars(cmd_line_args):
-            v = getattr(cmd_line_args, k)
-            if v is None:
-                continue
-            setattr(args, k, v)
-            logger.debug(f'Command line : {k} -> {v}')
+        # for k in vars(cmd_line_args):
+        #     v = getattr(cmd_line_args, k)
+        #     if v is None:
+        #         continue
+        #     setattr(args, k, v)
+        #     logger.debug(f'Command line : {k} -> {v}')
         self.args = args
 
         return args 

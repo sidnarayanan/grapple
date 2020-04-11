@@ -8,7 +8,7 @@ from tqdm import tqdm
 
 class PUDataset(IterableDataset):
     def __init__(self, config):
-        self._files = glob(config.dataset_pattern)# [:2]
+        self._files = glob(config.dataset_pattern)[:config.num_max_files]
         self.mask_charged = config.mask_charged
         if hasattr(config, 'min_met'):
             self.min_met = config.min_met 
@@ -40,16 +40,19 @@ class PUDataset(IterableDataset):
             Y = data['y']
             N = data['N']
             has_pq = 'p' in data
-            X = X[:, :, :4]
+            # X = X[:, :, :4]
             if has_pq:
                 P = data['p']
                 Q = data['q']
                 genmet = data['met']
+                pfmet = data['pfmet']
             if self.min_met is not None:
                 evt_mask = genmet > self.min_met
                 if has_pq:
                     P = P[evt_mask]
                     Q = Q[evt_mask]
+                    genmet = genmet[evt_mask]
+                    pfmet = pfmet[evt_mask]
                 X = X[evt_mask]
                 Y = Y[evt_mask]
                 N = N[evt_mask]
@@ -66,7 +69,7 @@ class PUDataset(IterableDataset):
                     y[q_mask] = -1
                 to_yield = (x, y, mask)
                 if has_pq:
-                    to_yield += (Q[i, :], P[i, :], genmet[i])
+                    to_yield += (Q[i, :], P[i, :], genmet[i], pfmet[i])
                 yield to_yield
 
     @staticmethod
