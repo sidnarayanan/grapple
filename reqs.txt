@@ -6,3 +6,4 @@ tqdm
 loguru
 ipython
 torchsummary
+pyjet

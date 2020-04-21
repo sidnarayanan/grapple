@@ -97,3 +97,13 @@ class Snapshot(object):
 
 def t2n(t):
     return t.to('cpu').detach().numpy()
+
+
+def rescore(yhat, q, y, rescale=True):
+    if rescale:
+        q_mask = q == 0
+        lo, hi = yhat[q_mask].min(), yhat[q_mask].max()
+        yhat[q_mask] = (yhat[q_mask] - lo) / (hi - lo)
+    q_mask = q != 0
+    yhat[q_mask] = y[q_mask]
+    return yhat

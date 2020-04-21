@@ -1,6 +1,6 @@
-train_dataset_pattern: /local/grapple/wjets/2020_04_09_19_53_54/train/*npz 
-test_dataset_pattern: /local/grapple/wjets/2020_04_09_19_53_54/test/*npz 
-output: /local/grapple/wjets/v4/
+train_dataset_pattern: /local/grapple/qcd/2020_04_17_13_14_05/*npz 
+test_dataset_pattern: /local/grapple/qcd/2020_04_17_13_14_05/*npz 
+output: /local/grapple/qcd/v4/
 n_epochs: 50
 embedding_size: 32
 hidden_size: 32
@@ -16,4 +16,4 @@ lr_decay: 0.99
 dr_adj: 0.25
 #num_max_files: 20
 #min_met: 50
-plot: /home/snarayan/public_html/figs/grapple/wmn_4/
+plot: /home/snarayan/public_html/figs/grapple/qcd_0/

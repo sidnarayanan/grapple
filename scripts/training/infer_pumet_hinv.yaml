@@ -1,0 +1,22 @@
+dataset_pattern: /local/grapple/hinv_pu/2020_04_20_22_40_44/*npz 
+output: /local/grapple/hinv_pu/v0_infer/
+weights: /local/grapple/hinv_pu/v0/2020_04_19_23_35_46/model_weights_epoch9.pt
+mask_charged: True
+
+embedding_size: 16
+hidden_size: 16
+intermediate_size: 16
+feature_size: 6 
+num_hidden_layers: 1 
+num_attention_heads: 1
+num_encoders: 4
+label_size: 2
+met_poly_degree: 4
+met_layers: 2
+
+batch_size: 32 
+#num_max_files: 10
+num_max_particles: 2000
+plot: /home/snarayan/public_html/figs/grapple/hinv_pu_0_jets/
+pt_weight: True
+#dr_adj: 0.4
