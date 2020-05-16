@@ -3,7 +3,7 @@ from grapple import utils
 
 p = utils.ArgumentParser()
 p.add_args(
-    '--dataset_pattern', '--output', ('--n_epochs', p.INT),
+    ('--dataset_pattern', p.MANY), '--output', ('--n_epochs', p.INT),
     ('--embedding_size', p.INT), ('--hidden_size', p.INT), ('--feature_size', p.INT),
     ('--num_attention_heads', p.INT), ('--intermediate_size', p.INT),
     ('--label_size', p.INT), ('--num_hidden_layers', p.INT), ('--batch_size', p.INT),
@@ -19,7 +19,7 @@ t2n = utils.t2n
 
 from grapple.data import PUDataset, DataLoader
 from grapple.metrics import * 
-from grapple.model import Joe, Bruno, Agnes
+from grapple.model import Joe, Bruno, Agnes, sparse
 
 from apex import amp
 from tqdm import tqdm, trange
@@ -47,7 +47,7 @@ if __name__ == '__main__':
     logger.info(f'Building model')
     model = Agnes(config)
     model = model.to(device)
-
+    
     opt = torch.optim.Adam(model.parameters(), lr=config.lr)
     lr = torch.optim.lr_scheduler.ExponentialLR(opt, config.lr_decay)
     # lr = torch.optim.lr_scheduler.ReduceLROnPlateau(
@@ -71,11 +71,12 @@ if __name__ == '__main__':
         logger.info(f'Epoch {e}: N_particles = {ds.n_particles}')
 
         model.unfreeze_all()
-        if e < 5:
+
+        if e < 13:
             # only fit PU
             model.freeze_met()
             metrics.met_loss_weight = metrics_puppi.met_loss_weight = 0.
-        elif e < 10:
+        elif e < 25:
             # only fit MET, based on a frozen encoder
             model.freeze_pu()
             metrics.met_loss_weight = metrics_puppi.met_loss_weight = 1
@@ -86,6 +87,8 @@ if __name__ == '__main__':
         met.reset()
         avg_loss_tensor = 0
         for n_batch, batch in enumerate(tqdm(dl, total=len(ds) // config.batch_size)):
+            sparse.VERBOSE = (n_batch == 0)
+
             x = to_t(batch['x'])
             y = to_lt(batch['y'])
             y_float = to_t(batch['x'][:,:,4]==0)

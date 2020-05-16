@@ -33,6 +33,8 @@ from transformers.modeling_bert import ACT2FN, BertEmbeddings, BertSelfAttention
 
 from .met_layer import METLayer
 
+VERBOSE = False
+
 
 class OskarAttention(BertSelfAttention):
     def __init__(self, config):
@@ -88,6 +90,9 @@ class OskarAttention(BertSelfAttention):
 
         # Normalize the attention scores to probabilities.
         attention_probs = nn.Softmax(dim=-1)(attention_scores)
+        if VERBOSE:
+            # print(attention_probs[0, :8, :8])
+            print(torch.max(attention_probs), torch.min(attention_probs))
 
         # This is actually dropping out entire tokens to attend to, which might
         # seem a bit unusual, but is taken from the original Transformer paper.
@@ -402,6 +407,7 @@ class Agnes(Bruno):
         if mask is not None and particle_mask is None:
             particle_mask = mask 
         yhat = super().forward(x, mask)
+        # yhat = super().forward(x[:, :, [0, 1]], mask)
 
         score = nn.functional.softmax(yhat, dim=-1)[:, :, 1] # [B,P]
         q_abs = torch.abs(q)

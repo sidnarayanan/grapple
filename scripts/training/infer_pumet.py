@@ -3,7 +3,7 @@ from grapple import utils
 
 p = utils.ArgumentParser()
 p.add_args(
-    '--dataset_pattern', '--output', '--weights', ('--mask_charged', p.STORE_TRUE), 
+    ('--dataset_pattern', p.MANY), '--weights', ('--mask_charged', p.STORE_TRUE), 
     ('--embedding_size', p.INT), ('--hidden_size', p.INT), ('--feature_size', p.INT),
     ('--num_attention_heads', p.INT), ('--intermediate_size', p.INT),
     ('--label_size', p.INT), ('--num_hidden_layers', p.INT), ('--batch_size', p.INT),
@@ -57,6 +57,7 @@ if __name__ == '__main__':
     met = METResolution()
     jet = JetResolution()
     jet_puppi = JetResolution()
+    jet_pf = JetResolution()
 
     if not os.path.exists(config.plot):
         os.makedirs(config.plot)
@@ -95,13 +96,18 @@ if __name__ == '__main__':
 
         methat = t2n(methat)
         gm = t2n(gm)
-        puppimet = t2n(puppimet)
-        met.compute(puppimet, gm, methat)
+        met.compute(batch['pfmet'], batch['puppimet'], gm, methat)
 
-        pred_weights = torch.nn.functional.softmax(yhat, dim=-1)[:, :, 1]
+        # pred_weights = torch.nn.functional.softmax(yhat, dim=-1)[:, :, 1]
 
-        jet.compute(batch['x'], t2n(pred_weights), batch['mask'], batch['jpt0'], batch['jm0'], batch['mjj']) 
+        pred_weights = t2n(pred_weights)
+        # pred_weights = (pred_weights > 0.5).astype(float)
+
+        pred_weights = utils.rescore(pred_weights, batch['q'], t2n(y_float), rescale=False)
+
+        jet.compute(batch['x'], pred_weights, batch['mask'], batch['jpt0'], batch['jm0'], batch['mjj']) 
         jet_puppi.compute(batch['x'], batch['p'], batch['mask'], batch['jpt0'], batch['jm0'], batch['mjj']) 
+        jet_pf.compute(batch['x'], np.ones_like(batch['p']), batch['mask'], batch['jpt0'], batch['jm0'], batch['mjj']) 
 
 
     plot_path = f'{config.plot}/inference'
@@ -111,6 +117,7 @@ if __name__ == '__main__':
     met.plot(plot_path + '_met')
     jet.plot(plot_path + '_jet_model')
     jet_puppi.plot(plot_path + '_jet_puppi')
+    jet_pf.plot(plot_path + '_jet_pf')
 
     avg_loss, avg_acc, avg_posacc, avg_negacc, avg_posfrac = metrics.mean()
     logger.info(f'Inference: Average fraction of hard particles = {avg_posfrac}')

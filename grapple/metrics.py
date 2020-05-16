@@ -39,7 +39,8 @@ class Metrics(object):
             tp.append(pos_hist[i:].sum())
             fp.append(neg_hist[i:].sum())
         auc = np.trapz(tp, x=fp)
-        plt.plot(fp, tp, label=f'AUC={auc:.3f}', marker='o')
+        plt.plot(fp, tp, label=f'AUC={auc:.3f}')
+        return fp, tp
 
     def add_values(self, yhat, y, label, idx, w=None):
         if w is not None:
@@ -125,7 +126,7 @@ class Metrics(object):
         plt.hist(weights=self.hists[1], label='Hard Neutral', **hist_args)
         plt.hist(weights=self.hists[2], label='PU Charged', **hist_args)
         plt.hist(weights=self.hists[3], label='Hard Charged', **hist_args)
-        plt.ylim(bottom=0.001)
+        plt.ylim(bottom=0.001, top=5e3)
         plt.xlabel('P(Hard|p,e)')
         plt.legend()
         for ext in ('pdf', 'png'):
@@ -133,14 +134,14 @@ class Metrics(object):
 
         plt.clf()
         fig_handle = plt.figure()
-        self.make_roc(self.hists[1], self.hists[0])
+        fp, tp, = self.make_roc(self.hists[1], self.hists[0])
         plt.ylabel('True Neutral Positive Rate')
         plt.xlabel('False Neutral Positive Rate')
         path += '_roc'
         plt.legend()
         for ext in ('pdf', 'png'):
             plt.savefig(path + '.' + ext)
-        pickle.dump(fig_handle, open(path + '.pkl', 'wb'))
+        pickle.dump({'fp': fp, 'tp': tp}, open(path + '.pkl', 'wb'))
         plt.close(fig_handle)
 
 
@@ -166,9 +167,14 @@ class JetResolution(object):
                 'mjj': np.linspace(-1000, 1000, 100),
             }
         self.bins_2 = {
-                'pt': np.linspace(0, 400, 100),
+                'pt': np.linspace(0, 500, 100),
                 'm': np.linspace(0, 50, 100),
                 'mjj': np.linspace(0, 3000, 100),
+            }
+        self.labels = {
+                'pt': 'Jet $p_T$',
+                'm': 'Jet $m$',
+                'mjj': '$m_{jj}$',
             }
         self.reset()
 
@@ -176,13 +182,24 @@ class JetResolution(object):
         self.dists = {k:[] for k in ['pt', 'm', 'mjj']} 
         self.dists_2 = {k:([], []) for k in ['pt', 'm', 'mjj']} 
 
+    @staticmethod 
+    def compute_mass(x):
+        pt, eta, e = x[:, :, 0], x[:, :, 1], x[:, :, 3]
+        p = pt * np.cosh(eta)
+        m = np.sqrt(np.clip(e**2 - p**2, 0, None))
+        return m
+
     def compute(self, x, weight, mask, pt0, m0, mjj):
-        x = np.copy(x[:, :, :4].astype(np.float64))
+        x = np.copy(x[:, :, :4])
+        m = self.compute_mass(x)
         x[:, :, 0] = x[:, :, 0] * weight
-        x[:, :, 3] = 0 # temporary override to approximate mass 
+        x[:,:,3] = m
+        #print(x[:,:,3])
+        #x[:, :, 3] = 0 # temporary override to approximate mass 
+        x = x.astype(np.float64)
         n_batch = x.shape[0] 
         for i in range(n_batch):
-            evt = x[i][mask[i].astype(bool)]
+            evt = x[i][np.logical_and(mask[i].astype(bool), x[i,:,0]>0)]
             evt = np.core.records.fromarrays(
                     evt.T, 
                     names='pt, eta, phi, m',
@@ -218,22 +235,27 @@ class JetResolution(object):
         for k, data in self.dists.items():
             plt.clf()
             plt.hist(data, bins=self.bins[k])
-            plt.xlabel('(Predicted-True)')
+            plt.xlabel(f'Predicted-True {self.labels[k]} [GeV]')
             for ext in ('pdf', 'png'):
                 plt.savefig(f'{path}_{k}_err.{ext}')
+            with open(f'{path}_{k}_err.pkl', 'wb') as fpkl:
+                pickle.dump(
+                        {'data': data, 'bins':self.bins[k]},
+                        fpkl
+                    )
 
         for k, data in self.dists_2.items():
             plt.clf()
             plt.hist2d(data[0], data[1], bins=self.bins_2[k])
-            plt.xlabel('True')
-            plt.ylabel('Predicted')
+            plt.xlabel(f'True {self.labels[k]} [GeV]')
+            plt.ylabel(f'Predicted {self.labels[k]} [GeV]')
             for ext in ('pdf', 'png'):
                 plt.savefig(f'{path}_{k}_corr.{ext}')
 
 
 
 class METResolution(object):
-    def __init__(self, bins=np.linspace(-100, 100, 100)):
+    def __init__(self, bins=np.linspace(-100, 100, 40)):
         self.bins = bins
         self.bins_2 = (0, 400)
         self.bins_met1 = (0, 400)
@@ -242,10 +264,12 @@ class METResolution(object):
     def reset(self):
         self.dist = None
         self.dist_p = None
+        self.dist_pup = None
         self.dist_2 = None
         self.dist_met = None
         self.dist_pred = None
         self.dist_2_p = None
+        self.dist_2_pup = None
 
     @staticmethod
     def _compute_res(pt, phi, w, gm):
@@ -258,14 +282,16 @@ class METResolution(object):
         res = (met / gm) - 1
         return res
 
-    def compute(self, pf, gm, pred, weight=None):
+    def compute(self, pf, pup, gm, pred, weight=None):
         res = (pred - gm)
         res_p = (pf - gm) 
+        res_pup = (pup - gm)
 
         hist, _ = np.histogram(res, bins=self.bins)
         hist_met, self.bins_met = np.histogram(gm, bins=np.linspace(*(self.bins_met1) + (100,)))
         hist_pred, self.bins_pred = np.histogram(pred, bins=np.linspace(*(self.bins_met1) + (100,)))
         hist_p, _ = np.histogram(res_p, bins=self.bins)
+        hist_pup, _ = np.histogram(res_pup, bins=self.bins)
         hist_2, _, _ = np.histogram2d(gm, pred, bins=100, range=(self.bins_2, self.bins_2))
         hist_2_p, _, _ = np.histogram2d(gm, pf, bins=100, range=(self.bins_2, self.bins_2))
         if self.dist is None:
@@ -273,6 +299,7 @@ class METResolution(object):
             self.dist_met = hist_met + EPS
             self.dist_pred = hist_pred + EPS
             self.dist_p = hist_p + EPS
+            self.dist_pup = hist_pup + EPS
             self.dist_2 = hist_2 + EPS
             self.dist_2_p = hist_2_p + EPS
         else:
@@ -280,6 +307,7 @@ class METResolution(object):
             self.dist_met += hist_met
             self.dist_pred += hist_pred
             self.dist_p += hist_p
+            self.dist_pup += hist_pup
             self.dist_2 += hist_2
             self.dist_2_p += hist_2_p
 
@@ -296,14 +324,18 @@ class METResolution(object):
 
         mean, var = self._compute_moments(x, self.dist)
         mean_p, var_p = self._compute_moments(x, self.dist_p)
+        mean_pup, var_pup = self._compute_moments(x, self.dist_pup)
 
         label = r'Model ($\delta=' + f'{mean:.1f}' + r'\pm' + f'{np.sqrt(var):.1f})$'
-        plt.hist(x=x, weights=self.dist, label=label, alpha=0.5, bins=self.bins)
+        plt.hist(x=x, weights=self.dist, label=label, histtype='step', bins=self.bins)
 
-        label = r'Puppi ($\delta=' + f'{mean_p:.1f}' + r'\pm' + f'{np.sqrt(var_p):.1f})$'
-        plt.hist(x=x, weights=self.dist_p, label=label, alpha=0.5, bins=self.bins)
+        label = r'Puppi ($\delta=' + f'{mean_pup:.1f}' + r'\pm' + f'{np.sqrt(var_pup):.1f})$'
+        plt.hist(x=x, weights=self.dist_pup, label=label, histtype='step', bins=self.bins)
 
-        plt.xlabel('(Predicted-True)')
+        label = r'Ground Truth ($\delta=' + f'{mean_p:.1f}' + r'\pm' + f'{np.sqrt(var_p):.1f})$'
+        plt.hist(x=x, weights=self.dist_p, label=label, histtype='step', bins=self.bins, linestyle='--')
+
+        plt.xlabel('Predicted-True MET [GeV]')
         plt.legend()
         for ext in ('pdf', 'png'):
             plt.savefig(path + '.' + ext)
@@ -326,6 +358,8 @@ class METResolution(object):
         self.dist_2 = np.ma.masked_where(self.dist_2 < 0.5, self.dist_2)
         plt.imshow(self.dist_2.T, vmin=0.5, extent=(self.bins_2 + self.bins_2),
                    origin='lower')
+        plt.xlabel('True MET [GeV]')
+        plt.ylabel('Predicted MET [GeV]')
         plt.colorbar()
         for ext in ('pdf', 'png'):
             plt.savefig(path + '_corr.' + ext)

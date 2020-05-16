@@ -4,11 +4,16 @@ from loguru import logger
 from glob import glob 
 import numpy as np
 from tqdm import tqdm
+from itertools import chain 
 
 
 class PUDataset(IterableDataset):
     def __init__(self, config):
-        self._files = glob(config.dataset_pattern)[:config.num_max_files]
+        self._files = list(chain.from_iterable(
+                [glob(pattern)
+                    for pattern in config.dataset_pattern]
+            ))
+        self.num_max_files = config.num_max_files
         self.mask_charged = config.mask_charged
         self.n_particles = config.num_max_particles
         self.dr_adj = config.dr_adj
@@ -23,7 +28,8 @@ class PUDataset(IterableDataset):
 
     def _get_len(self):
         n_tot = 0
-        for f in self._files:
+        np.random.shuffle(self._files)
+        for f in self._files[:self.num_max_files]:
             data = np.load(f)
             N = data['N']
             if self.min_met is not None:
@@ -36,6 +42,9 @@ class PUDataset(IterableDataset):
 
     @staticmethod
     def cone_adj(eta, phi, cone=0.4):
+        if cone == 0.0:
+            N = eta.shape[0]
+            return np.eye(N, N)
         deta2 = np.square(eta[:,np.newaxis] - eta)
         dphi2 = np.square(phi[:,np.newaxis] - phi)
         dr2 = deta2 + dphi2 
@@ -45,7 +54,7 @@ class PUDataset(IterableDataset):
 
     def __iter__(self):
         np.random.shuffle(self._files)
-        for f in self._files:
+        for f in self._files[:self.num_max_files]:
             data = np.load(f)
             X = data['x']
             Y = data['y']
@@ -58,6 +67,7 @@ class PUDataset(IterableDataset):
             jpt0 = data['jpt0']
             jm0 = data['jm0']
             puppimet = data['puppimet']
+            pfmet = data['pfmet']
 
             X = X[:, :self.n_particles, :]
             Y = Y[:, :self.n_particles]
@@ -94,6 +104,7 @@ class PUDataset(IterableDataset):
                         'genmet': genmet[i],
                         'genmetphi': genmetphi[i],
                         'puppimet': puppimet[i],
+                        'pfmet': pfmet[i],
                         'orig_y': orig_y,
                         'mask': mask,
                         'mjj': mjj[i],
