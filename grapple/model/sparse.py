@@ -27,9 +27,13 @@ import os
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from torch.nn import CrossEntropyLoss, MSELoss
 
 from transformers.modeling_bert import ACT2FN, BertEmbeddings, BertSelfAttention, prune_linear_layer
+from longformer.diagonaled_mm_tvm import diagonaled_mm as diagonaled_mm_tvm, mask_invalid_locations
+from longformer.sliding_chunks import sliding_chunks_matmul_qk, sliding_chunks_matmul_pv
+
 
 from .met_layer import METLayer
 
@@ -48,6 +52,7 @@ class OskarAttention(BertSelfAttention):
         self.dense = nn.Linear(config.hidden_size, config.hidden_size)
         self.LayerNorm = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
         self.pruned_heads = set()
+        self.attention_band = config.attention_band
 
     def prune_heads(self, heads):
         if len(heads) == 0:
@@ -81,30 +86,77 @@ class OskarAttention(BertSelfAttention):
         key_layer = self.transpose_for_scores(mixed_key_layer)
         value_layer = self.transpose_for_scores(mixed_value_layer)
 
-        # Take the dot product between "query" and "key" to get the raw attention scores.
-        attention_scores = torch.matmul(query_layer, key_layer.transpose(-1, -2))
-        attention_scores = attention_scores / math.sqrt(self.attention_head_size)
-        if attention_mask is not None:
-            # Apply the attention mask is (precomputed for all layers in BertModel forward() function)
-            attention_scores = attention_scores + attention_mask
+        if self.attention_band is not None:
+            query_layer = query_layer.permute(0, 2, 1, 3)
+            key_layer = key_layer.permute(0, 2, 1, 3)
+            value_layer = value_layer.permute(0, 2, 1, 3)
 
-        # Normalize the attention scores to probabilities.
-        attention_probs = nn.Softmax(dim=-1)(attention_scores)
-        if VERBOSE:
-            # print(attention_probs[0, :8, :8])
-            print(torch.max(attention_probs), torch.min(attention_probs))
+            attn_band = self.attention_band 
+            if attention_mask is not None:
+                attention_mask = attention_mask.squeeze(dim=2).squeeze(dim=1)
+                remove_from_windowed_attention_mask = (attention_mask != 0)
+            query_layer /= math.sqrt(self.attention_head_size)
+            query_layer = query_layer.float().contiguous() 
+            key_layer = key_layer.float().contiguous() 
+            if False:
+                attention_scores = diagonaled_mm_tvm(
+                        query_layer, key_layer,
+                        attn_band, 
+                        1, False, 0, False # dilation, is_t1_diag, padding, autoregressive
+                    )
+            else:
+                attention_scores = sliding_chunks_matmul_qk(
+                        query_layer, key_layer,
+                        attn_band, padding_value=0
+                )
+            mask_invalid_locations(attention_scores, attn_band, 1, False)
+            if attention_mask is not None:
+                remove_from_windowed_attention_mask = remove_from_windowed_attention_mask.unsqueeze(dim=-1).unsqueeze(dim=-1)
+                float_mask = remove_from_windowed_attention_mask.type_as(query_layer).masked_fill(remove_from_windowed_attention_mask, -10000.0)
+                float_mask = float_mask.repeat(1, 1, 1, 1) # don't think I need this
+                ones = float_mask.new_ones(size=float_mask.size())  
+                if False:
+                    d_mask = diagonaled_mm_tvm(ones, float_mask, attn_band, 1, False, 0, False)
+                else:
+                    d_mask = sliding_chunks_matmul_qk(ones, float_mask, attn_band, padding_value=0)
+                attention_scores += d_mask
 
-        # This is actually dropping out entire tokens to attend to, which might
-        # seem a bit unusual, but is taken from the original Transformer paper.
-        attention_probs = self.dropout(attention_probs)
+            attention_probs = F.softmax(attention_scores, dim=-1, dtype=torch.float32)
+            attention_probs = self.dropout(attention_probs)
+            
+            value_layer = value_layer.float().contiguous()
+            if False:
+                context_layer = diagonaled_mm_tvm(attention_probs, value_layer, attn_band, 1, True, 0, False)
+            else:
+                context_layer = sliding_chunks_matmul_pv(attention_probs, value_layer, attn_band)
 
-        # Mask heads if we want to
-        if head_mask is not None:
-            attention_probs = attention_probs * head_mask
+        else:
+            # Take the dot product between "query" and "key" to get the raw attention scores.
+            attention_scores = torch.matmul(query_layer, key_layer.transpose(-1, -2))
+            attention_scores = attention_scores / math.sqrt(self.attention_head_size)
+            if attention_mask is not None:
+                # Apply the attention mask is (precomputed for all layers in BertModel forward() function)
+                attention_scores = attention_scores + attention_mask
 
-        context_layer = torch.matmul(attention_probs, value_layer)
+            # Normalize the attention scores to probabilities.
+            attention_probs = nn.Softmax(dim=-1)(attention_scores)
+            if VERBOSE:
+                # print(attention_probs[0, :8, :8])
+                print(torch.max(attention_probs), torch.min(attention_probs))
 
-        context_layer = context_layer.permute(0, 2, 1, 3).contiguous()
+            # This is actually dropping out entire tokens to attend to, which might
+            # seem a bit unusual, but is taken from the original Transformer paper.
+            attention_probs = self.dropout(attention_probs)
+
+            # Mask heads if we want to
+            if head_mask is not None:
+                attention_probs = attention_probs * head_mask
+
+            context_layer = torch.matmul(attention_probs, value_layer)
+
+            context_layer = context_layer.permute(0, 2, 1, 3)
+
+        context_layer = context_layer.contiguous()
 
         # Should find a better way to do this
         w = (

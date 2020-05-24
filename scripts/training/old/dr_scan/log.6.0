@@ -1,0 +1,6 @@
+Traceback (most recent call last):
+  File "../train_pumet.py", line 17, in <module>
+    config = p.parse_args()
+  File "/home/snarayan/grapple/grapple/utils.py", line 68, in parse_args
+    payload = yaml.safe_load(open(conf, 'r'))
+FileNotFoundError: [Errno 2] No such file or directory: 'dr_6.0.yaml'

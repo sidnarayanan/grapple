@@ -8,3 +8,4 @@ ipython
 torchsummary
 pyjet
 scipy
+git+https://github.com/allenai/longformer.git

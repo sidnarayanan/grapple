@@ -1,0 +1,23 @@
+dataset_pattern: /data/t3home000/snarayan/papu/data_v0/WJets_*npy 
+output: /local/papu/v0/
+n_epochs: 25
+
+embedding_size: 16
+hidden_size: 16
+intermediate_size: 16
+feature_size: 6 
+num_hidden_layers: 1 
+num_attention_heads: 2
+num_encoders: 4
+label_size: 1
+attention_band: 10
+
+batch_size: 64
+mask_charged: True 
+lr: 0.005
+lr_decay: 0.98
+num_max_files: 10
+num_max_particles: 7000
+#min_met: 50
+plot: /home/snarayan/public_html/figs/papu/v0/
+pt_weight: True

@@ -246,3 +246,62 @@ class METDataset(IterableDataset):
         n_fts = len(samples[0])
         to_ret = [np.stack([s[i] for s in samples], axis=0) for i in range(n_fts)]
         return to_ret
+
+
+class PapuDataset(IterableDataset):
+    def __init__(self, config):
+        self._files = glob(config.dataset_pattern)
+        self.num_max_files = config.num_max_files
+        self.mask_charged = config.mask_charged
+        self.n_particles = config.num_max_particles
+        self.dr_adj = config.dr_adj
+        if hasattr(config, 'min_met'):
+            self.min_met = config.min_met 
+        else:
+            self.min_met = None 
+        self._len = self._get_len() 
+
+        branches = ['pt', 'eta', 'phi', 'e', 'puppi', 'pdgid', 'hardfrac', 'cluster_idx', 'vtxid']
+        self.b2i = {b:i for i,b in enumerate(branches)}
+
+    def __len__(self):
+        return self._len
+
+    def _get_len(self):
+        n_tot = 0
+        for f in self._files[:self.num_max_files]:
+            X = np.load(f)
+            n_tot += X.shape[0]
+        return n_tot
+
+    def __iter__(self):
+        np.random.shuffle(self._files)
+        for f in self._files[:self.num_max_files]:
+            data = np.load(f)
+
+            data = data[:, :self.n_particles, :]
+
+            X = data[:,:,[self.b2i[b] for b in ['pt', 'eta', 'phi', 'e', 'pdgid', 'vtxid']]]
+            y = data[:,:,self.b2i['hardfrac']]
+            p = data[:,:,self.b2i['puppi']]
+
+            mask = (data[:, :, self.b2i['pt']] > 0)
+
+            neutral_mask = (data[:, :, self.b2i['vtxid']] < 0)
+
+            idx = np.arange(X.shape[0])
+            np.random.shuffle(idx)
+            for i in idx:
+                yield {
+                    'x': X[i, :, :], 
+                    'y': y[i, :], 
+                    'puppi': p[i, :], 
+                    'mask': mask[i, :], 
+                    'neutral_mask': neutral_mask[i, :]
+                }
+
+    @staticmethod
+    def collate_fn(samples):
+        keys = list(samples[0].keys())
+        to_ret = {k:np.stack([s[k] for s in samples], axis=0) for k in keys}
+        return to_ret 

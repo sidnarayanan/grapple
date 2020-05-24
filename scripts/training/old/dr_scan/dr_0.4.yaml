@@ -1,0 +1,27 @@
+dataset_pattern: [/local/grapple/ttbar_pu/2020_04_21_22_35_46/*npz] 
+#dataset_pattern: [/local/grapple/hinv_pu/2020_04_20_22_40_44/*npz, /local/grapple/ttbar_pu/2020_04_21_22_35_46/*npz] 
+output: /local/grapple/all_pu_dr/0.4/
+n_epochs: 25
+
+embedding_size: 16
+hidden_size: 16
+intermediate_size: 16
+feature_size: 6 
+num_hidden_layers: 1 
+num_attention_heads: 4
+num_encoders: 4
+met_poly_degree: 4
+met_layers: 2
+label_size: 2
+
+batch_size: 8
+mask_charged: True 
+lr: 0.001
+lr_decay: 0.98
+#dr_adj: 0.25
+num_max_files: 20
+num_max_particles: 2000
+#min_met: 50
+plot: /home/snarayan/public_html/figs/grapple/all_pu_dr/0.4/
+pt_weight: True
+dr_adj: 0.4
