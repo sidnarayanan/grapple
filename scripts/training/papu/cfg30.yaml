@@ -1,5 +1,5 @@
-dataset_pattern: /data/t3home000/bmaier/data_preconvert/WJets_*npz 
-output: /local/papu/v0/
+dataset_pattern: /data/t3home000/bmaier/data_preconvert_cluster30/WJets_*npz 
+output: /data/t3home000/snarayan/papu/expts/scan_0/v0_30/
 n_epochs: 50
 
 embedding_size: 16
@@ -10,14 +10,14 @@ num_hidden_layers: 1
 num_attention_heads: 4
 num_encoders: 4
 label_size: 1
-attention_band: 20
+attention_band: 35
 
-batch_size: 64 
+batch_size: 32 
 mask_charged: True 
-lr: 0.001
+lr: 0.0005
 lr_decay: 0.98
-#num_max_files: 10
+num_max_files: 10
 num_max_particles: 7000
 #min_met: 50
-plot: /home/snarayan/public_html/figs/papu/v0/
+plot: /home/snarayan/public_html/figs/papu/v0_30/
 pt_weight: True 

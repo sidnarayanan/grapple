@@ -42,7 +42,8 @@ if __name__ == '__main__':
 
     logger.info(f'Reading dataset at {config.dataset_pattern}')
     ds = PapuDataset(config)
-    dl = DataLoader(ds, batch_size=config.batch_size, collate_fn=PapuDataset.collate_fn)
+    dl = DataLoader(ds, batch_size=config.batch_size, 
+                    collate_fn=PapuDataset.collate_fn)
 
     logger.info(f'Building model')
     model = Bruno(config)
@@ -57,6 +58,7 @@ if __name__ == '__main__':
     #     )
     metrics = PapuMetrics()
     metrics_puppi = PapuMetrics()
+    metres = ParticleMETResolution()
 
     # model, opt = amp.initialize(model, opt, opt_level='O1')
 
@@ -83,6 +85,7 @@ if __name__ == '__main__':
         model.train()
         metrics.reset()
         metrics_puppi.reset()
+        metres.reset()
 
         avg_loss_tensor = 0
         for n_batch, batch in enumerate(tqdm(dl, total=len(ds) // config.batch_size)):
@@ -93,6 +96,7 @@ if __name__ == '__main__':
             m = to_lt(batch['mask'])
             p = to_t(batch['puppi'])
             qm = to_lt(batch['mask'] & batch['neutral_mask'])
+            genmet = batch['genmet'][:, 0]
 
             opt.zero_grad()
             yhat = model(x, mask=m)
@@ -100,7 +104,11 @@ if __name__ == '__main__':
                 weight = x[:, :, 0] / x[:, 0, 0].reshape(-1, 1)
                 weight = weight ** 2
             else:
-                weight = None
+                soft = (y < 0.5).float() * qm
+                soft_frac = torch.sum(soft, dim=-1) / torch.sum(qm, dim=-1)
+                soft_frac = soft_frac.float().unsqueeze(1)
+                weight = (1 - soft_frac) * soft 
+                weight += soft_frac * (1 - soft) 
             loss, _ = metrics.compute(yhat, y, w=weight, m=qm)
             loss.backward()
 
@@ -110,14 +118,25 @@ if __name__ == '__main__':
             opt.step()
             avg_loss_tensor += loss
 
+            score = t2n(yhat.squeeze(-1))
+            charged_mask = ~batch['neutral_mask']
+            score[charged_mask] = batch['y'][charged_mask]
+
+            metres.compute(pt=batch['x'][:, :, 0],
+                           phi=batch['x'][:, :, 2],
+                           w=score,
+                           y=batch['y'],
+                           baseline=batch['puppi'],
+                           gm=genmet)
+
         avg_loss_tensor /= n_batch
         lr.step()
 
         plot_path = f'{config.plot}/resolution_{e:03d}'
 
-        # metrics.plot(plot_path + '_model')
-        # metrics_puppi.plot(plot_path + '_puppi')
-        # met.plot(plot_path + '_met')
+        metrics.plot(plot_path + '_model')
+        metrics_puppi.plot(plot_path + '_puppi')
+        resolution = metres.plot(plot_path + '_met')
 
         avg_loss, avg_acc, avg_posacc, avg_negacc, avg_posfrac = metrics.mean()
         logger.info(f'Epoch {e}: Average fraction of hard particles = {avg_posfrac}')
@@ -129,6 +148,9 @@ if __name__ == '__main__':
         logger.info(f'Epoch {e}: PUPPI:')
         logger.info(f'Epoch {e}: Loss = {avg_loss}; Accuracy = {avg_acc}')
         logger.info(f'Epoch {e}: Hard ID = {avg_posacc}; PU ID = {avg_negacc}')
+
+        logger.info(f'Epoch {e}: Model MET err = {resolution["model"][0]} +/- {resolution["model"][1]}')
+        logger.info(f'Epoch {e}: Puppi MET err = {resolution["puppi"][0]} +/- {resolution["puppi"][1]}')
 
         torch.save(model.state_dict(), snapshot.get_path(f'model_weights_epoch{e}.pt'))
 

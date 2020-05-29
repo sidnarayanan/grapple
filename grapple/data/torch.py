@@ -270,14 +270,16 @@ class PapuDataset(IterableDataset):
     def _get_len(self):
         n_tot = 0
         for f in self._files[:self.num_max_files]:
-            X = np.load(f)
+            X = np.load(f)['met']
             n_tot += X.shape[0]
         return n_tot
 
     def __iter__(self):
         np.random.shuffle(self._files)
         for f in self._files[:self.num_max_files]:
-            data = np.load(f)
+            raw_data = np.load(f)
+            data = raw_data['x']
+            met = raw_data['met']
 
             data = data[:, :self.n_particles, :]
 
@@ -297,7 +299,8 @@ class PapuDataset(IterableDataset):
                     'y': y[i, :], 
                     'puppi': p[i, :], 
                     'mask': mask[i, :], 
-                    'neutral_mask': neutral_mask[i, :]
+                    'neutral_mask': neutral_mask[i, :],
+                    'genmet': met[i, :]
                 }
 
     @staticmethod

@@ -96,6 +96,8 @@ class Snapshot(object):
 
 
 def t2n(t):
+    if t is None:
+        return None
     return t.to('cpu').detach().numpy()
 
 

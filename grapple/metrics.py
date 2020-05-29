@@ -390,7 +390,7 @@ class ParticleMETResolution(METResolution):
     def compute(self, pt, phi, w, y, baseline, gm):
         res = self._compute_res(pt, phi, w, gm)
         res_t = self._compute_res(pt, phi, y, gm)
-        res_p = baseline - gm
+        res_p = self._compute_res(pt, phi, baseline, gm)
 
         hist, _ = np.histogram(res, bins=self.bins)
         hist_p, _ = np.histogram(res_p, bins=self.bins)
@@ -413,13 +413,13 @@ class ParticleMETResolution(METResolution):
         mean_met, var_met = self._compute_moments(x, self.dist_met)
 
         label = r'Model ($\delta=' + f'{mean:.1f}' + r'\pm' + f'{np.sqrt(var):.1f})$'
-        plt.hist(x=x, weights=self.dist, label=label, alpha=0.5, bins=self.bins)
+        plt.hist(x=x, weights=self.dist, label=label, histtype='step', bins=self.bins)
 
         label = r'Puppi ($\delta=' + f'{mean_p:.1f}' + r'\pm' + f'{np.sqrt(var_p):.1f})$'
-        plt.hist(x=x, weights=self.dist_p, label=label, alpha=0.5, bins=self.bins)
+        plt.hist(x=x, weights=self.dist_p, label=label, histtype='step', bins=self.bins)
 
         label = r'Truth+PF ($\delta=' + f'{mean_met:.1f}' + r'\pm' + f'{np.sqrt(var_met):.1f})$'
-        plt.hist(x=x, weights=self.dist_met, label=label, alpha=0.5, bins=self.bins)
+        plt.hist(x=x, weights=self.dist_met, label=label, histtype='step', bins=self.bins)
 
         plt.xlabel('(Predicted-True)')
         plt.legend()
@@ -445,6 +445,7 @@ class PapuMetrics(object):
         self.n_particles = 0
         self.n_steps = 0
         self.hists = {}
+        self.bins = {}
 
     @staticmethod
     def make_roc(pos_hist, neg_hist):
@@ -458,14 +459,14 @@ class PapuMetrics(object):
         plt.plot(fp, tp, label=f'AUC={auc:.3f}')
         return fp, tp
 
-    def add_values(self, yhat, y_mask, idx, w=None):
-        if w is not None:
-            w = w[y_mask]
-        hist, self.bins = np.histogram(yhat[y_mask], bins=np.linspace(0, 1, 100), weights=w)
-        if idx not in self.hists:
-            self.hists[idx] = hist + EPS
+    def add_values(self, val, key, w=None, lo=0, hi=1):
+        hist, bins = np.histogram(
+                val, bins=np.linspace(lo, hi, 100), weights=w)
+        if key not in self.hists:
+            self.hists[key] = hist + EPS
+            self.bins[key] = bins
         else:
-            self.hists[idx] += hist
+            self.hists[key] += hist
 
     def compute(self, yhat, y, w=None, m=None):
         yhat = yhat.view(-1)
@@ -483,22 +484,24 @@ class PapuMetrics(object):
         self.loss += t2n(loss).mean()
 
         m = t2n(m).astype(bool)
-        y = t2n(y)
-        yhat = t2n(yhat)
+        y = t2n(y)[m]
+        if w is not None:
+            w = t2n(w).reshape(-1)[m]
+        yhat = t2n(yhat)[m]
         n_particles = m.sum()
 
         # let's define positive/negative by >/< 0.5
         y_bin = y > 0.5 
         yhat_bin = yhat > 0.5
 
-        acc = (y_bin == yhat_bin)[m].sum() / n_particles
+        acc = (y_bin == yhat_bin).sum() / n_particles
         self.acc += acc
 
-        n_pos = np.logical_and(m, y_bin).sum()
-        pos_acc = (y_bin == yhat_bin)[m & y_bin].sum() / n_pos 
+        n_pos = y_bin.sum()
+        pos_acc = (y_bin == yhat_bin)[y_bin].sum() / n_pos 
         self.pos_acc += pos_acc
-        n_neg = np.logical_and(m, ~y_bin).sum()
-        neg_acc = (y_bin == yhat_bin)[m & ~y_bin].sum() / n_neg 
+        n_neg = (~y_bin).sum()
+        neg_acc = (y_bin == yhat_bin)[~y_bin].sum() / n_neg 
         self.neg_acc += neg_acc
 
         self.n_pos += n_pos
@@ -506,15 +509,12 @@ class PapuMetrics(object):
 
         self.n_steps += 1
 
-        # self.add_values(yhat[:,:,1][m], orig_y[m], 0, 0, wm)
-        # self.add_values(yhat[:,:,1][m], orig_y[m], 1, 1, wm)
-        # self.add_values(yhat[:,:,1][~m], orig_y[~m], 0, 2, wnm)
-        # self.add_values(yhat[:,:,1][~m], orig_y[~m], 1, 3, wnm)
-
-        # if self.n_steps % 50 == 0 and False:
-        #     print(t2n(y[0])[:10])
-        #     print(t2n(pred[0])[:10])
-        #     print(t2n(yhat[0])[:10, :])
+        self.add_values(
+            y, 'truth', w, -0.2, 1.2) 
+        self.add_values(
+            yhat, 'pred', w, -0.2, 1.2) 
+        self.add_values(
+            yhat-y, 'err', w, -2, 2)
 
         return loss, acc
 
@@ -525,33 +525,39 @@ class PapuMetrics(object):
 
     def plot(self, path):
         plt.clf()
-        x = (self.bins[:-1] + self.bins[1:]) * 0.5
+        bins = self.bins['truth'] 
+        x = (bins[:-1] + bins[1:]) * 0.5
         hist_args = {
                 'histtype': 'step',
                 #'alpha': 0.25,
-                'bins': self.bins,
+                'bins': bins,
                 'log': True,
                 'x': x,
                 'density': True
             }
-        plt.hist(weights=self.hists[0], label='PU Neutral', **hist_args)
-        plt.hist(weights=self.hists[1], label='Hard Neutral', **hist_args)
-        plt.hist(weights=self.hists[2], label='PU Charged', **hist_args)
-        plt.hist(weights=self.hists[3], label='Hard Charged', **hist_args)
+        plt.hist(weights=self.hists['truth'], label='Truth', **hist_args)
+        plt.hist(weights=self.hists['pred'], label='Pred', **hist_args)
         plt.ylim(bottom=0.001, top=5e3)
-        plt.xlabel('P(Hard|p,e)')
+        plt.xlabel(r'$E_{\mathrm{hard}}/E_{\mathrm{tot.}}$')
         plt.legend()
         for ext in ('pdf', 'png'):
-            plt.savefig(path + '.' + ext)
+            plt.savefig(path + '_e.' + ext)
 
         plt.clf()
-        fig_handle = plt.figure()
-        fp, tp, = self.make_roc(self.hists[1], self.hists[0])
-        plt.ylabel('True Neutral Positive Rate')
-        plt.xlabel('False Neutral Positive Rate')
-        path += '_roc'
+        bins = self.bins['err'] 
+        x = (bins[:-1] + bins[1:]) * 0.5
+        hist_args = {
+                'histtype': 'step',
+                #'alpha': 0.25,
+                'bins': bins,
+                'log': True,
+                'x': x,
+                'density': True
+            }
+        plt.hist(weights=self.hists['err'], label='Error', **hist_args)
+        plt.ylim(bottom=0.001, top=5e3)
+        plt.xlabel(r'Prediction - Truth')
         plt.legend()
         for ext in ('pdf', 'png'):
-            plt.savefig(path + '.' + ext)
-        pickle.dump({'fp': fp, 'tp': tp}, open(path + '.pkl', 'wb'))
-        plt.close(fig_handle)
+            plt.savefig(path + '_err.' + ext)
+

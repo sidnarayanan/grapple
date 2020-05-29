@@ -1,5 +1,5 @@
 dataset_pattern: /data/t3home000/bmaier/data_preconvert/WJets_*npz 
-output: /local/papu/v0/
+output: /data/t3home000/snarayan/papu/expt1/mid/ 
 n_epochs: 50
 
 embedding_size: 16
@@ -16,8 +16,8 @@ batch_size: 64
 mask_charged: True 
 lr: 0.001
 lr_decay: 0.98
-#num_max_files: 10
+num_max_files: 20
 num_max_particles: 7000
 #min_met: 50
-plot: /home/snarayan/public_html/figs/papu/v0/
+plot: /home/snarayan/public_html/figs/papu/scan1/mid/
 pt_weight: True 
