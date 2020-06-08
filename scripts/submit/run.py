@@ -53,7 +53,7 @@ def environ_to_condor():
 
 
 def mkdir(d, clean=False):
-    if clean:
+    if clean and os.path.exists(d):
         shutil.rmtree(d)
     if not os.path.exists(d):
         os.makedirs(d)
@@ -88,6 +88,7 @@ echo CONF $conf_id
 cd %s/grapple/ 
 source ./setup.sh
 python3 scripts/training/papu/train_pu.py -c ../${conf_id}/conf.yaml
+#python3 scripts/training/test.py -c ../${conf_id}/conf.yaml
 '''%workdir
         with open(workdir + '/runner.sh', 'w') as frunner:
             frunner.write(runner)
@@ -129,19 +130,19 @@ python3 scripts/training/papu/train_pu.py -c ../${conf_id}/conf.yaml
     def _poll(self, cluster_id):
         try:
             results = list(self.schedd.query('ClusterId =?= %i'%cluster_id))[0]
+            status = job_status[results['JobStatus']]
         except IndexError:
-            # job has vanished...
-            return 
-        status = job_status[results['JobStatus']]
+            status = 'completed'
         target, job_id = self.running_clusters[cluster_id]
         if status in ('running', 'idle'):
             logger.info('Job %i still running on %s'%(job_id, target))
             return 
         # kill the job
-        self.schedd.act(
-                htcondor.JobAction.Remove,
-                ['%s.%s'%(cluster_id, [results['ProcId']])]
-            )
+        if status == 'held':
+            ret = self.schedd.act(
+                    htcondor.JobAction.Remove,
+                    ['%s.%s'%(cluster_id, [results['ProcId']])]
+                )
         del self.running_clusters[cluster_id]
         self.available_machines[target] = True 
         if status == 'held':

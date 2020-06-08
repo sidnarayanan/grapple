@@ -12,6 +12,8 @@ p.add_args(
     ('--lr_schedule', p.STORE_TRUE), '--plot',
     ('--pt_weight', p.STORE_TRUE), ('--num_max_files', p.INT),
     ('--num_max_particles', p.INT), ('--dr_adj', p.FLOAT),
+    ('--beta', p.STORE_TRUE),
+    ('--lr_policy'), ('--grad_acc', p.INT),
 )
 config = p.parse_args()
 
@@ -21,12 +23,12 @@ from grapple.data import PapuDataset, DataLoader
 from grapple.metrics import * 
 from grapple.model import Joe, Bruno, Agnes, sparse
 
-from apex import amp
 from tqdm import tqdm, trange
 from loguru import logger
 import torch
 from torch import nn 
 from torch.utils.data import RandomSampler
+from torch.cuda import amp
 import os
 
 
@@ -40,6 +42,11 @@ if __name__ == '__main__':
     to_t = lambda x: torch.Tensor(x).to(device)
     to_lt = lambda x: torch.LongTensor(x).to(device)
 
+    if config.grad_acc is not None:
+        config.batch_size //= config.grad_acc
+    else:
+        config.grad_acc = 1
+
     logger.info(f'Reading dataset at {config.dataset_pattern}')
     ds = PapuDataset(config)
     dl = DataLoader(ds, batch_size=config.batch_size, 
@@ -48,15 +55,22 @@ if __name__ == '__main__':
     logger.info(f'Building model')
     model = Bruno(config)
     model = model.to(device)
+
+    steps_per_epoch = len(ds) // config.batch_size
     
     opt = torch.optim.Adam(model.parameters(), lr=config.lr)
-    lr = torch.optim.lr_scheduler.ExponentialLR(opt, config.lr_decay)
+    if config.lr_policy == 'exp' or config.lr_policy is None:
+        lr = torch.optim.lr_scheduler.ExponentialLR(opt, config.lr_decay)
+    elif config.lr_policy == 'cyclic':
+        lr = torch.optim.lr_scheduler.CyclicLR(opt, 0, config.lr, step_size_up=steps_per_epoch*2,
+                                               scale_fn=lambda c: config.lr_decay ** c,
+                                               cycle_momentum=False)
     # lr = torch.optim.lr_scheduler.ReduceLROnPlateau(
     #         opt, 
     #         factor=config.lr_decay,
     #         patience=3
     #     )
-    metrics = PapuMetrics()
+    metrics = PapuMetrics(config.beta)
     metrics_puppi = PapuMetrics()
     metres = ParticleMETResolution()
 
@@ -64,6 +78,8 @@ if __name__ == '__main__':
 
     if not os.path.exists(config.plot):
         os.makedirs(config.plot)
+
+    scaler = amp.GradScaler()
 
     for e in range(config.n_epochs):
         logger.info(f'Epoch {e}: Start')
@@ -88,7 +104,9 @@ if __name__ == '__main__':
         metres.reset()
 
         avg_loss_tensor = 0
-        for n_batch, batch in enumerate(tqdm(dl, total=len(ds) // config.batch_size)):
+        # tqdm = lambda x, **kwargs: x
+        opt.zero_grad()
+        for n_batch, batch in enumerate(tqdm(dl, total=steps_per_epoch)):
             sparse.VERBOSE = (n_batch == 0)
 
             x = to_t(batch['x'])
@@ -96,29 +114,47 @@ if __name__ == '__main__':
             m = to_lt(batch['mask'])
             p = to_t(batch['puppi'])
             qm = to_lt(batch['mask'] & batch['neutral_mask'])
+            cqm = to_lt(batch['mask'] & ~batch['neutral_mask'])
             genmet = batch['genmet'][:, 0]
 
-            opt.zero_grad()
-            yhat = model(x, mask=m)
             if config.pt_weight:
                 weight = x[:, :, 0] / x[:, 0, 0].reshape(-1, 1)
                 weight = weight ** 2
             else:
-                soft = (y < 0.5).float() * qm
-                soft_frac = torch.sum(soft, dim=-1) / torch.sum(qm, dim=-1)
-                soft_frac = soft_frac.float().unsqueeze(1)
-                weight = (1 - soft_frac) * soft 
-                weight += soft_frac * (1 - soft) 
-            loss, _ = metrics.compute(yhat, y, w=weight, m=qm)
-            loss.backward()
+                weight = None
 
-            metrics_puppi.compute(p, y, w=weight, m=qm)
+            if True or e < 3:
+                loss_mask = m 
+            else:
+                loss_mask = qm
 
-            torch.nn.utils.clip_grad_norm_(model.parameters(), 5)
-            opt.step()
+            with amp.autocast():
+                yhat = model(x, mask=m)
+                if not config.beta:
+                    yhat = torch.sigmoid(yhat)
+                else:
+                    yhat = torch.relu(yhat)
+                loss, _ = metrics.compute(yhat, y, w=weight, m=loss_mask, plot_m=qm)
+                loss /= config.grad_acc
+            scaler.scale(loss).backward()
+
+            if (n_batch+1) % config.grad_acc == 0:
+                scaler.unscale_(opt)
+                torch.nn.utils.clip_grad_norm_(model.parameters(), 5)
+                scaler.step(opt)
+                scaler.update()
+                opt.zero_grad()
+
+            metrics_puppi.compute(p, y, w=weight, m=loss_mask, plot_m=qm)
+
             avg_loss_tensor += loss
 
-            score = t2n(yhat.squeeze(-1))
+            if config.beta:
+                p, q = yhat[:, :, 0], yhat[:, :, 1]
+                # logger.info(' '.join([str(x) for x in [p.max(), p.min(), q.max(), q.min()]]))
+                yhat = p / (p + q + 1e-5)
+
+            score = t2n(torch.clamp(yhat.squeeze(-1), 0, 1))
             charged_mask = ~batch['neutral_mask']
             score[charged_mask] = batch['y'][charged_mask]
 
@@ -129,8 +165,14 @@ if __name__ == '__main__':
                            baseline=batch['puppi'],
                            gm=genmet)
 
+            if config.lr_policy == 'cyclic':
+                lr.step()
+                # current_lr = [group['lr'] for group in opt.param_groups][0]
+                # logger.info(f'Epoch {e}: Step {n_batch}: Current LR = {current_lr}')
+
         avg_loss_tensor /= n_batch
-        lr.step()
+        if config.lr_policy != 'cyclic':
+            lr.step()
 
         plot_path = f'{config.plot}/resolution_{e:03d}'
 

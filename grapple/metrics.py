@@ -7,7 +7,7 @@ import pickle
 
 import pyjet
 
-EPS = 1e-12
+EPS = 1e-4
 
 
 class Metrics(object):
@@ -430,10 +430,26 @@ class ParticleMETResolution(METResolution):
 
 
 class PapuMetrics(object):
-    def __init__(self):
-        self.loss_calc = nn.MSELoss(
-                reduction='none'
-            )
+    def __init__(self, beta=False):
+        self.beta = beta 
+        if not self.beta:
+            self.loss_calc = nn.MSELoss(
+                    reduction='none'
+                )
+        else:
+            def neglogbeta(p, q, y):
+                loss = torch.lgamma(p + q)
+                loss -= torch.lgamma(p) + torch.lgamma(q)
+                loss += (p - 1) * torch.log(y + EPS)
+                loss += (q - 1) * torch.log(1 - y + EPS)
+                return -loss 
+            self.loss_calc = neglogbeta
+            def beta_mean(p, q):
+                return p / (p + q)
+            self.beta_mean = beta_mean 
+            def beta_std(p, q):
+                return torch.sqrt(p*q / ((p+q)**2 * (p+q+1)))
+            self.beta_std = beta_std
         self.reset()
 
     def reset(self):
@@ -468,27 +484,51 @@ class PapuMetrics(object):
         else:
             self.hists[key] += hist
 
-    def compute(self, yhat, y, w=None, m=None):
-        yhat = yhat.view(-1)
+    def compute(self, yhat, y, w=None, m=None, plot_m=None):
         y = y.view(-1)
-        loss = self.loss_calc(yhat, y)
+        if not self.beta:
+            yhat = yhat.view(-1)
+            loss = self.loss_calc(yhat, y)
+        else:
+            yhat = yhat + EPS
+            p, q = yhat[:, :, 0], yhat[:, :, 1]
+            p, q = p.view(-1), q.view(-1)
+            loss = self.loss_calc(p, q, y)
+            yhat = self.beta_mean(p, q)
+            yhat_std = self.beta_std(p, q)
+        yhat = torch.clamp(yhat, 0 , 1)
         if w is not None:
             wv = w.view(-1)
             loss *= wv
         if m is None:
             m = torch.ones_like(y, dtype=bool)
+        if plot_m is None:
+            plot_m = m
         m = m.view(-1)
+        plot_m = m.view(-1)
         loss *= m
+
+        nan_mask = t2n(torch.isnan(loss)).astype(bool)
 
         loss = torch.mean(loss)
         self.loss += t2n(loss).mean()
 
-        m = t2n(m).astype(bool)
-        y = t2n(y)[m]
+        if nan_mask.sum() > 0:
+            yhat = t2n(yhat)
+            print(nan_mask)
+            print(yhat[nan_mask])
+            if self.beta:
+                p, q = t2n(p), t2n(q)
+                print(p[nan_mask])
+                print(q[nan_mask])
+            print()
+
+        plot_m = t2n(plot_m).astype(bool)
+        y = t2n(y)[plot_m]
         if w is not None:
-            w = t2n(w).reshape(-1)[m]
-        yhat = t2n(yhat)[m]
-        n_particles = m.sum()
+            w = t2n(w).reshape(-1)[plot_m]
+        yhat = t2n(yhat)[plot_m]
+        n_particles = plot_m.sum()
 
         # let's define positive/negative by >/< 0.5
         y_bin = y > 0.5 

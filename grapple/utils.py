@@ -4,6 +4,7 @@ import os
 import sys
 import time
 import yaml
+import numpy as np
 
 
 class Opt(dict):
@@ -98,6 +99,8 @@ class Snapshot(object):
 def t2n(t):
     if t is None:
         return None
+    if isinstance(t, np.ndarray):
+        return t
     return t.to('cpu').detach().numpy()
 
 

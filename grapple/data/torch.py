@@ -261,7 +261,8 @@ class PapuDataset(IterableDataset):
             self.min_met = None 
         self._len = self._get_len() 
 
-        branches = ['pt', 'eta', 'phi', 'e', 'puppi', 'pdgid', 'hardfrac', 'cluster_idx', 'vtxid']
+        branches = ['pt', 'eta', 'phi', 'e', 'puppi', 'pdgid', 'hardfrac', 'cluster_idx', 'vtxid',
+                    'cluster_r', 'cluster_hardch_pt', 'cluster_puch_pt', 'npv']
         self.b2i = {b:i for i,b in enumerate(branches)}
 
     def __len__(self):
@@ -283,7 +284,7 @@ class PapuDataset(IterableDataset):
 
             data = data[:, :self.n_particles, :]
 
-            X = data[:,:,[self.b2i[b] for b in ['pt', 'eta', 'phi', 'e', 'pdgid', 'vtxid']]]
+            X = data[:,:,[i for b,i in self.b2i.items() if b != 'hardfrac']]
             y = data[:,:,self.b2i['hardfrac']]
             p = data[:,:,self.b2i['puppi']]
 

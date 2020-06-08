@@ -1,5 +1,5 @@
 numpy
-torch
+#torch
 transformers
 pyyaml
 tqdm
@@ -9,3 +9,4 @@ torchsummary
 pyjet
 scipy
 git+https://github.com/allenai/longformer.git
+matplotlib

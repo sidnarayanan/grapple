@@ -30,7 +30,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn import CrossEntropyLoss, MSELoss
 
-from transformers.modeling_bert import ACT2FN, BertEmbeddings, BertSelfAttention, prune_linear_layer
+from transformers.modeling_bert import ACT2FN, BertEmbeddings, BertSelfAttention, prune_linear_layer, gelu_new
+
 from longformer.diagonaled_mm_tvm import diagonaled_mm as diagonaled_mm_tvm, mask_invalid_locations
 from longformer.sliding_chunks import sliding_chunks_matmul_qk, sliding_chunks_matmul_pv
 
@@ -276,7 +277,7 @@ class Oskar(nn.Module):
     def __init__(self, config):
         super().__init__()
 
-        self.relu = nn.ReLU() 
+        self.relu = gelu_new #nn.ReLU() 
         self.tanh = nn.Tanh()
 
         config.output_attentions = False
@@ -366,7 +367,7 @@ class Bruno(nn.Module):
     def __init__(self, config):
         super().__init__()
 
-        self.relu = nn.ReLU() 
+        self.relu = gelu_new #nn.ReLU() 
         self.tanh = nn.Tanh()
 
         config.output_attentions = False
@@ -378,10 +379,18 @@ class Bruno(nn.Module):
         config.attention_probs_dropout_prob = 0
         config.hidden_act = "gelu_new"
 
+        self.input_bn = nn.BatchNorm1d(config.feature_size) 
+
         self.embedder = nn.Linear(config.feature_size, config.embedding_size)
+        self.embed_bn = nn.BatchNorm1d(config.embedding_size) 
+
         self.encoders = nn.ModuleList([OskarTransformer(config) for _ in range(config.num_encoders)])
-        self.decoders = nn.ModuleList([nn.Linear(config.hidden_size, config.hidden_size), 
-                                       nn.Linear(config.hidden_size, config.label_size)])
+        self.decoders = nn.ModuleList([
+                                       nn.Linear(config.hidden_size, config.hidden_size), 
+                                       nn.Linear(config.hidden_size, config.hidden_size), 
+                                       nn.Linear(config.hidden_size, config.label_size)
+                                       ])
+        self.decoder_bn = nn.ModuleList([nn.BatchNorm1d(config.hidden_size) for _ in self.decoders[:-1]])
 
         self.tests = nn.ModuleList(
                     [
@@ -422,13 +431,23 @@ class Bruno(nn.Module):
 
         head_mask = [None] * self.config.num_hidden_layers
 
+        x = self.input_bn(x.permute(0, 2, 1)).permute(0, 2, 1)
+
         h = self.embedder(x) 
-        h = torch.tanh(h)
+        h = torch.relu(h)
+        h = self.embed_bn(h.permute(0, 2, 1)).permute(0, 2, 1)
+
         for e in self.encoders:
             h = e(h, attn_mask, head_mask)[0]
         h = self.decoders[0](h)
         h = self.relu(h)
+        h = self.decoder_bn[0](h.permute(0, 2, 1)).permute(0, 2, 1)
+
         h = self.decoders[1](h)
+        h = self.relu(h)
+        h = self.decoder_bn[1](h.permute(0, 2, 1)).permute(0, 2, 1)
+
+        h = self.decoders[2](h)
 
         return h
 

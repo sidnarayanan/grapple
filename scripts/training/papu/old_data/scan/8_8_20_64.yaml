@@ -1,0 +1,23 @@
+dataset_pattern: /data/t3home000/bmaier/data_preconvert_9000/WJets_*npz 
+output: /data/t3home000/snarayan/papu/expts/1/8_8_20_64/ 
+n_epochs: 50
+
+embedding_size: 8
+hidden_size: 8
+intermediate_size: 8
+feature_size: 6 
+num_hidden_layers: 1 
+num_attention_heads: 4
+num_encoders: 8
+label_size: 1
+attention_band: 20
+
+batch_size: 64
+mask_charged: True 
+lr: 0.001
+lr_decay: 0.99
+num_max_files: 20
+num_max_particles: 9000
+#min_met: 50
+plot: /home/snarayan/public_html/figs/papu/scan1/8_8_20_64/
+pt_weight: True
