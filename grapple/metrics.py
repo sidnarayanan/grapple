@@ -504,7 +504,7 @@ class PapuMetrics(object):
             m = torch.ones_like(y, dtype=bool)
         if plot_m is None:
             plot_m = m
-        m = m.view(-1)
+        m = m.view(-1).float()
         plot_m = m.view(-1)
         loss *= m
 

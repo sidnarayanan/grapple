@@ -28,11 +28,12 @@ from loguru import logger
 import torch
 from torch import nn 
 from torch.utils.data import RandomSampler
-from torch.cuda import amp
 import os
+from apex import amp
 
 
 if __name__ == '__main__':
+
     snapshot = utils.Snapshot(config.output, config)
     logger.info(f'Saving output to {snapshot.path}')
 
@@ -54,7 +55,6 @@ if __name__ == '__main__':
 
     logger.info(f'Building model')
     model = Bruno(config)
-    model = model.to(device)
 
     steps_per_epoch = len(ds) // config.batch_size
     
@@ -74,12 +74,14 @@ if __name__ == '__main__':
     metrics_puppi = PapuMetrics()
     metres = ParticleMETResolution()
 
-    # model, opt = amp.initialize(model, opt, opt_level='O1')
+    model = model.to(device)
+    model, opt = amp.initialize(model, opt, opt_level='O1')
+    if torch.cuda.device_count() > 1:
+        logger.info(f'Distributing model across {torch.cuda.device_count()} GPUs')
+        model = nn.DataParallel(model)
 
     if not os.path.exists(config.plot):
         os.makedirs(config.plot)
-
-    scaler = amp.GradScaler()
 
     for e in range(config.n_epochs):
         logger.info(f'Epoch {e}: Start')
@@ -128,21 +130,19 @@ if __name__ == '__main__':
             else:
                 loss_mask = qm
 
-            with amp.autocast():
-                yhat = model(x, mask=m)
-                if not config.beta:
-                    yhat = torch.sigmoid(yhat)
-                else:
-                    yhat = torch.relu(yhat)
-                loss, _ = metrics.compute(yhat, y, w=weight, m=loss_mask, plot_m=qm)
-                loss /= config.grad_acc
-            scaler.scale(loss).backward()
+            yhat = model(x, mask=m)
+            if not config.beta:
+                yhat = torch.sigmoid(yhat)
+            else:
+                yhat = torch.relu(yhat)
+            loss, _ = metrics.compute(yhat, y, w=weight, m=loss_mask, plot_m=qm)
+            loss /= config.grad_acc
+            with amp.scale_loss(loss, opt) as scaled_loss:
+                scaled_loss.backward()
 
             if (n_batch+1) % config.grad_acc == 0:
-                scaler.unscale_(opt)
                 torch.nn.utils.clip_grad_norm_(model.parameters(), 5)
-                scaler.step(opt)
-                scaler.update()
+                opt.step()
                 opt.zero_grad()
 
             metrics_puppi.compute(p, y, w=weight, m=loss_mask, plot_m=qm)
