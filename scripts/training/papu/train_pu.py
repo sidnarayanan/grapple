@@ -48,6 +48,9 @@ if __name__ == '__main__':
     else:
         config.grad_acc = 1
 
+    if torch.cuda.device_count() > 1:
+        config.batch_size *= torch.cuda.device_count()
+
     logger.info(f'Reading dataset at {config.dataset_pattern}')
     ds = PapuDataset(config)
     dl = DataLoader(ds, batch_size=config.batch_size, 
