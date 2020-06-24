@@ -62,7 +62,16 @@ if __name__ == '__main__':
 
     model = Bruno(config)
     if config.from_snapshot is not None:
-        model.load_state_dict(torch.load(config.from_snapshot),strict=False)
+        # original saved file with DataParallel
+        state_dict = torch.load(config.from_snapshot)
+        # create new OrderedDict that does not contain `module.`
+        from collections import OrderedDict
+        new_state_dict = OrderedDict()
+        for k, v in state_dict.items():
+            name = k[7:] # remove `module.`
+            new_state_dict[name] = v
+        # load params
+        model.load_state_dict(new_state_dict)
         logger.info(f'Snapshot {config.from_snapshot} loaded.')
         
     steps_per_epoch = len(ds) // config.batch_size
