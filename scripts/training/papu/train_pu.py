@@ -9,6 +9,8 @@ p.add_args(
     ('--label_size', p.INT), ('--num_hidden_layers', p.INT), ('--batch_size', p.INT),
     ('--mask_charged', p.STORE_TRUE), ('--lr', {'type': float}),
     ('--attention_band', p.INT),
+    ('--epoch_offset', p.INT),
+    ('--from_snapshot'),
     ('--lr_schedule', p.STORE_TRUE), '--plot',
     ('--pt_weight', p.STORE_TRUE), ('--num_max_files', p.INT),
     ('--num_max_particles', p.INT), ('--dr_adj', p.FLOAT),
@@ -57,15 +59,34 @@ if __name__ == '__main__':
                     collate_fn=PapuDataset.collate_fn)
 
     logger.info(f'Building model')
-    model = Bruno(config)
 
+    model = Bruno(config)
+    if config.from_snapshot is not None:
+        # original saved file with DataParallel
+        state_dict = torch.load(config.from_snapshot)
+        # create new OrderedDict that does not contain `module.`
+        from collections import OrderedDict
+        new_state_dict = OrderedDict()
+        for k, v in state_dict.items():
+            name = k
+            if k.startswith('module'):
+                name = k[7:] # remove `module.`
+            new_state_dict[name] = v
+        # load params
+        model.load_state_dict(new_state_dict)
+        logger.info(f'Snapshot {config.from_snapshot} loaded.')
+        
     steps_per_epoch = len(ds) // config.batch_size
     
-    opt = torch.optim.Adam(model.parameters(), lr=config.lr)
+    if config.epoch_offset is not None:
+        _lr = config.lr * (config.lr_decay ** (config.epoch_offset // 2))
+    else:
+        _lr = config.lr
+    opt = torch.optim.Adam(model.parameters(), lr=_lr)
     if config.lr_policy == 'exp' or config.lr_policy is None:
         lr = torch.optim.lr_scheduler.ExponentialLR(opt, config.lr_decay)
     elif config.lr_policy == 'cyclic':
-        lr = torch.optim.lr_scheduler.CyclicLR(opt, 0, config.lr, step_size_up=steps_per_epoch*2,
+        lr = torch.optim.lr_scheduler.CyclicLR(opt, 0, _lr, step_size_up=steps_per_epoch*2,
                                                scale_fn=lambda c: config.lr_decay ** c,
                                                cycle_momentum=False)
     # lr = torch.optim.lr_scheduler.ReduceLROnPlateau(
@@ -86,7 +107,12 @@ if __name__ == '__main__':
     if not os.path.exists(config.plot):
         os.makedirs(config.plot)
 
-    for e in range(config.n_epochs):
+    if config.epoch_offset is not None:
+        min_epoch = config.epoch_offset+1
+    else:
+        min_epoch = 0
+
+    for e in range(min_epoch,config.n_epochs):
         logger.info(f'Epoch {e}: Start')
         current_lr = [group['lr'] for group in opt.param_groups][0]
         logger.info(f'Epoch {e}: Current LR = {current_lr}')
