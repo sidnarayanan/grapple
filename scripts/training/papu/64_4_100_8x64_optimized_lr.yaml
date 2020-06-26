@@ -24,3 +24,4 @@ num_max_particles: 9000
 plot: /nobackup/users/bmaier/scan3/64_4_100_16_mse_optimized_lr/
 pt_weight: True
 #beta: True
+
