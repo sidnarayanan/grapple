@@ -22,7 +22,7 @@ CONDA_ROOT=$HOME2/anaconda3
 source ${CONDA_ROOT}/etc/profile.d/conda.sh
 conda activate $PYTHON_VIRTUAL_ENVIRONMENT
 
-cd /home/bmaier/puma/grapple/
+cd /home/${USER}/puma/grapple/
 export PYTHONPATH=${PYTHONPATH}:${PWD}
 cd -
 nvidia-smi
@@ -47,7 +47,7 @@ echo " Run started at:- "
 date
 
 ## Horovod execution
-python /home/bmaier/puma/grapple/scripts/training/papu/train_pu.py -c /home/bmaier/puma/grapple/scripts/training/papu/64_4_100_8x64_optimized_lr_add_1.yaml
+python /home/${USER}/puma/grapple/scripts/training/papu/train_pu.py -c /home/${USER}/puma/grapple/scripts/training/papu/64_4_100_8x64_optimized_lr.yaml
 
 echo "Run completed at:- "
 date
