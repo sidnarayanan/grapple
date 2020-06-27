@@ -94,6 +94,7 @@ if __name__ == '__main__':
     metrics = PapuMetrics(config.beta)
     metrics_puppi = PapuMetrics()
     metres = ParticleMETResolution()
+    jetres = JetResolution()
 
     model = model.to(device)
     model, opt = amp.initialize(model, opt, opt_level='O1')
@@ -113,6 +114,7 @@ if __name__ == '__main__':
     metrics.reset()
     metrics_puppi.reset()
     metres.reset()
+    jetres.reset()
 
     avg_loss_tensor = 0
     for n_batch, batch in enumerate(tqdm(dl, total=steps_per_epoch)):
@@ -164,6 +166,12 @@ if __name__ == '__main__':
                        y=batch['y'],
                        baseline=batch['puppi'],
                        gm=genmet)
+
+        jetres.compute(x=batch['x'],
+                       weight=score,
+                       mask=batch['mask'],
+                       pt0=batch['jet1'][:,0])
+
 
     avg_loss_tensor /= n_batch
 

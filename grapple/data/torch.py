@@ -281,6 +281,7 @@ class PapuDataset(IterableDataset):
             raw_data = np.load(f)
             data = raw_data['x']
             met = raw_data['met']
+            jet1 = raw_data['jet1']
 
             data = data[:, :self.n_particles, :]
 
@@ -301,7 +302,8 @@ class PapuDataset(IterableDataset):
                     'puppi': p[i, :], 
                     'mask': mask[i, :], 
                     'neutral_mask': neutral_mask[i, :],
-                    'genmet': met[i, :]
+                    'genmet': met[i, :],
+                    'jet1': jet1[i, :],
                 }
 
     @staticmethod

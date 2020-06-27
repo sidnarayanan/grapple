@@ -191,7 +191,7 @@ class JetResolution(object):
         m = np.sqrt(np.clip(e**2 - p**2, 0, None))
         return m
 
-    def compute(self, x, weight, mask, pt0, m0, mjj):
+    def compute(self, x, weight, mask, pt0, m0=None, mjj=None):
         x = np.copy(x[:, :, :4])
         m = self.compute_mass(x)
         x[:, :, 0] = x[:, :, 0] * weight
@@ -214,27 +214,31 @@ class JetResolution(object):
                 self.dists_2['pt'][0].append(pt0[i])
                 self.dists_2['pt'][1].append(jets[0].pt)
 
-                self.dists['m'].append(jets[0].mass - m0[i])
-                self.dists_2['m'][0].append(m0[i])
-                self.dists_2['m'][1].append(jets[0].mass)
+                if m0 is not None:
+                    self.dists['m'].append(jets[0].mass - m0[i])
+                    self.dists_2['m'][0].append(m0[i])
+                    self.dists_2['m'][1].append(jets[0].mass)
 
-                if len(jets) > 1:
-                    j0, j1 = jets[:2]
-                    mjj_pred = np.sqrt(
-                            (j0.e + j1.e) ** 2 
-                            - (j0.px + j1.px) ** 2
-                            - (j0.py + j1.py) ** 2
-                            - (j0.pz + j1.pz) ** 2
-                        )
-                else:
-                    mjj_pred = 0 
-                if mjj[i] > 0:
-                    self.dists['mjj'].append(mjj_pred - mjj[i])
-                    self.dists_2['mjj'][0].append(mjj[i])
-                    self.dists_2['mjj'][1].append(mjj_pred)
+                if mjj is not None:
+                    if len(jets) > 1:
+                        j0, j1 = jets[:2]
+                        mjj_pred = np.sqrt(
+                                (j0.e + j1.e) ** 2 
+                                - (j0.px + j1.px) ** 2
+                                - (j0.py + j1.py) ** 2
+                                - (j0.pz + j1.pz) ** 2
+                            )
+                    else:
+                        mjj_pred = 0 
+                    if mjj[i] > 0:
+                        self.dists['mjj'].append(mjj_pred - mjj[i])
+                        self.dists_2['mjj'][0].append(mjj[i])
+                        self.dists_2['mjj'][1].append(mjj_pred)
 
     def plot(self, path):
         for k, data in self.dists.items():
+            if len(data) == 0:
+                continue
             plt.clf()
             plt.hist(data, bins=self.bins[k])
             plt.xlabel(f'Predicted-True {self.labels[k]} [GeV]')
@@ -247,6 +251,8 @@ class JetResolution(object):
                     )
 
         for k, data in self.dists_2.items():
+            if len(data[0]) == 0:
+                continue
             plt.clf()
             plt.hist2d(data[0], data[1], bins=self.bins_2[k])
             plt.xlabel(f'True {self.labels[k]} [GeV]')
