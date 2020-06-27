@@ -1,27 +1,27 @@
-dataset_pattern: /nobackup/users/bmaier/puma/ttbar_v3/TTBar_*npz 
-output: /nobackup/users/bmaier/puma/expts/3/64_4_100_16_mse_optimized_lr/ 
+dataset_pattern: /nobackup/users/sidn/puma/ttbar_v3/TTBar_*npz 
+output: /nobackup/users/sidn/puma/expts/4/batch4096_rep64_enc4_repeat3_band30/ 
 n_epochs: 100
 
-embedding_size: 66
-hidden_size: 66
-intermediate_size: 66
+embedding_size: 64
+hidden_size: 64
+intermediate_size: 64x3
 feature_size: 12 
 num_hidden_layers: 3
-num_attention_heads: 3
+num_attention_heads: 4
 num_encoders: 4
 label_size: 1
 attention_band: 30
 
-batch_size: 256 
-grad_acc: 64
+batch_size: 128 
+grad_acc: 8
 mask_charged: False
-lr: 0.001
-lr_decay: 0.97
+lr: 0.0002
+lr_decay: 0.9
 lr_policy: 'cyclic'
 #num_max_files: 1 
 num_max_particles: 9000
 #min_met: 50
-plot: /nobackup/users/bmaier/scan3/64_4_100_16_mse_optimized_lr/
+plot: /nobackup/users/sidn/puma/expts/4/batch4096_rep64_enc12_repeat1_band30/
 pt_weight: True
 #beta: True
 

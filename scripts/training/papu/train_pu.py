@@ -32,6 +32,11 @@ from torch import nn
 from torch.utils.data import RandomSampler
 import os
 from apex import amp
+from functools import partial
+
+
+def scale_fn(c, decay):
+    return decay ** c
 
 
 if __name__ == '__main__':
@@ -57,38 +62,37 @@ if __name__ == '__main__':
     ds = PapuDataset(config)
     dl = DataLoader(ds, batch_size=config.batch_size, 
                     collate_fn=PapuDataset.collate_fn)
+    steps_per_epoch = len(ds) // config.batch_size
 
     logger.info(f'Building model')
 
     model = Bruno(config)
-    if config.from_snapshot is not None:
-        # original saved file with DataParallel
-        state_dict = torch.load(config.from_snapshot)
-        # create new OrderedDict that does not contain `module.`
-        from collections import OrderedDict
-        new_state_dict = OrderedDict()
-        for k, v in state_dict.items():
-            name = k
-            if k.startswith('module'):
-                name = k[7:] # remove `module.`
-            new_state_dict[name] = v
-        # load params
-        model.load_state_dict(new_state_dict)
-        logger.info(f'Snapshot {config.from_snapshot} loaded.')
-        
-    steps_per_epoch = len(ds) // config.batch_size
-    
-    if config.epoch_offset is not None:
-        _lr = config.lr * (config.lr_decay ** (config.epoch_offset // 2))
-    else:
-        _lr = config.lr
-    opt = torch.optim.Adam(model.parameters(), lr=_lr)
+    opt = torch.optim.Adam(model.parameters(), lr=config.lr)
     if config.lr_policy == 'exp' or config.lr_policy is None:
         lr = torch.optim.lr_scheduler.ExponentialLR(opt, config.lr_decay)
     elif config.lr_policy == 'cyclic':
-        lr = torch.optim.lr_scheduler.CyclicLR(opt, 0, _lr, step_size_up=steps_per_epoch*2,
-                                               scale_fn=lambda c: config.lr_decay ** c,
+        lr = torch.optim.lr_scheduler.CyclicLR(opt, 0, config.lr, step_size_up=steps_per_epoch*2,
+                                               scale_fn=partial(scale_fn, decay=config.lr_decay),
                                                cycle_momentum=False)
+    if config.from_snapshot is not None:
+        # original saved file with DataParallel
+        state_dicts = torch.load(config.from_snapshot)
+        # create new OrderedDict that does not contain `module.`
+        from collections import OrderedDict
+        model_state_dict = OrderedDict()
+        for k, v in state_dicts['model'].items():
+            name = k
+            if k.startswith('module'):
+                name = k[7:] # remove `module.`
+            model_state_dict[name] = v
+        # load params
+        model.load_state_dict(model_state_dict)
+
+        opt.load_state_dict(state_dict['opt'])
+        lr.load_state_dict(state_dict['lr'])
+
+        logger.info(f'Snapshot {config.from_snapshot} loaded.')
+
     # lr = torch.optim.lr_scheduler.ReduceLROnPlateau(
     #         opt, 
     #         factor=config.lr_decay,
@@ -223,6 +227,11 @@ if __name__ == '__main__':
         logger.info(f'Epoch {e}: Model MET err = {resolution["model"][0]} +/- {resolution["model"][1]}')
         logger.info(f'Epoch {e}: Puppi MET err = {resolution["puppi"][0]} +/- {resolution["puppi"][1]}')
 
-        torch.save(model.state_dict(), snapshot.get_path(f'model_weights_epoch{e}.pt'))
+        model_to_save = model.module if torch.cuda.device_count() > 1 else model
+        state_dicts = {'model': model_to_save.state_dict(),
+                       'opt': opt.state_dict(),
+                       'lr': lr.state_dict()}
+
+        torch.save(state_dicts, snapshot.get_path(f'model_weights_epoch{e}.pt'))
 
         # ds.n_particles = min(2000, ds.n_particles + 50)
