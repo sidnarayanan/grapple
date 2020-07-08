@@ -4,6 +4,7 @@ from grapple import utils
 p = utils.ArgumentParser()
 p.add_args(
     '--dataset_pattern', '--output', ('--n_epochs', p.INT),
+    '--checkpoint_path',
     ('--embedding_size', p.INT), ('--hidden_size', p.INT), ('--feature_size', p.INT),
     ('--num_attention_heads', p.INT), ('--intermediate_size', p.INT),
     ('--label_size', p.INT), ('--num_hidden_layers', p.INT), ('--batch_size', p.INT),
@@ -33,6 +34,8 @@ from torch.utils.data import RandomSampler
 import os
 from apex import amp
 from functools import partial
+from glob import glob
+import re
 
 
 def scale_fn(c, decay):
@@ -66,14 +69,15 @@ if __name__ == '__main__':
 
     logger.info(f'Building model')
 
+    if config.from_snapshot is None:
+        existing_checkpoints = glob(snapshot.get_path('model_weights_epoch*pt'))
+        if existing_checkpoints:
+            ckpt = sorted(existing_checkpoints)[-1]
+            config.from_snapshot = ckpt
+            epoch = int(re.sub(r'.*epoch', '', re.sub(r'\.pt$', '', ckpt)))
+            config.epoch_offset = epoch
+
     model = Bruno(config)
-    opt = torch.optim.Adam(model.parameters(), lr=config.lr)
-    if config.lr_policy == 'exp' or config.lr_policy is None:
-        lr = torch.optim.lr_scheduler.ExponentialLR(opt, config.lr_decay)
-    elif config.lr_policy == 'cyclic':
-        lr = torch.optim.lr_scheduler.CyclicLR(opt, 0, config.lr, step_size_up=steps_per_epoch*2,
-                                               scale_fn=partial(scale_fn, decay=config.lr_decay),
-                                               cycle_momentum=False)
     if config.from_snapshot is not None:
         # original saved file with DataParallel
         state_dicts = torch.load(config.from_snapshot)
@@ -88,10 +92,22 @@ if __name__ == '__main__':
         # load params
         model.load_state_dict(model_state_dict)
 
-        opt.load_state_dict(state_dict['opt'])
-        lr.load_state_dict(state_dict['lr'])
+        # opt.load_state_dict(state_dicts['opt'])
+        # lr.load_state_dict(state_dicts['lr'])
 
         logger.info(f'Snapshot {config.from_snapshot} loaded.')
+
+    opt = torch.optim.Adam(model.parameters(), lr=config.lr)
+    if config.lr_policy == 'exp' or config.lr_policy is None:
+        lr = torch.optim.lr_scheduler.ExponentialLR(opt, config.lr_decay)
+    elif config.lr_policy == 'cyclic':
+        lr = torch.optim.lr_scheduler.CyclicLR(opt, 0, config.lr, step_size_up=steps_per_epoch*2,
+                                               scale_fn=partial(scale_fn, decay=config.lr_decay),
+                                               cycle_momentum=False)
+
+    model = model.to(device)
+    model, opt = amp.initialize(model, opt, opt_level='O1')
+
 
     # lr = torch.optim.lr_scheduler.ReduceLROnPlateau(
     #         opt, 
@@ -102,8 +118,6 @@ if __name__ == '__main__':
     metrics_puppi = PapuMetrics()
     metres = ParticleMETResolution()
 
-    model = model.to(device)
-    model, opt = amp.initialize(model, opt, opt_level='O1')
     if torch.cuda.device_count() > 1:
         logger.info(f'Distributing model across {torch.cuda.device_count()} GPUs')
         model = nn.DataParallel(model)
@@ -116,7 +130,7 @@ if __name__ == '__main__':
     else:
         min_epoch = 0
 
-    for e in range(min_epoch,config.n_epochs):
+    for e in range(min_epoch, config.n_epochs+min_epoch):
         logger.info(f'Epoch {e}: Start')
         current_lr = [group['lr'] for group in opt.param_groups][0]
         logger.info(f'Epoch {e}: Current LR = {current_lr}')
@@ -232,6 +246,6 @@ if __name__ == '__main__':
                        'opt': opt.state_dict(),
                        'lr': lr.state_dict()}
 
-        torch.save(state_dicts, snapshot.get_path(f'model_weights_epoch{e}.pt'))
+        torch.save(state_dicts, snapshot.get_path(f'model_weights_epoch{e:06d}.pt'))
 
         # ds.n_particles = min(2000, ds.n_particles + 50)

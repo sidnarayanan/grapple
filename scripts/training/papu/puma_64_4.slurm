@@ -47,7 +47,7 @@ echo " Run started at:- "
 date
 
 ## Horovod execution
-python /home/${USER}/puma/grapple/scripts/training/papu/train_pu.py -c /home/${USER}/puma/grapple/scripts/training/papu/64_4_100_8x64_optimized_lr.yaml
+python /home/${USER}/puma/grapple/scripts/training/papu/train_pu.py -c /home/${USER}/puma/grapple/scripts/training/papu/latest.yaml
 
 echo "Run completed at:- "
 date

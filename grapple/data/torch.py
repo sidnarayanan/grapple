@@ -285,7 +285,7 @@ class PapuDataset(IterableDataset):
 
             data = data[:, :self.n_particles, :]
 
-            X = data[:,:,[i for b,i in self.b2i.items() if b != 'hardfrac']]
+            X = data[:,:,[i for b,i in self.b2i.items() if b not in ('hardfrac', 'puppi')]]
             y = data[:,:,self.b2i['hardfrac']]
             p = data[:,:,self.b2i['puppi']]
 

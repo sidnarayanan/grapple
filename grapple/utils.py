@@ -5,6 +5,7 @@ import sys
 import time
 import yaml
 import numpy as np
+from uuid import uuid4
 
 
 class Opt(dict):
@@ -83,14 +84,19 @@ class ArgumentParser(_AP):
 
 class Snapshot(object):
     def __init__(self, base_path, args):
-        self.path = os.path.join(base_path, time.strftime("%Y_%m_%d_%H_%M_%S"))
+        if hasattr(args, 'checkpoint_path'):
+            self.path = args.checkpoint_path
+        else:
+            self.path = os.path.join(base_path, time.strftime("%Y_%m_%d_%H_%M_%S"))
         logger.info(f'Snapshot placed at {self.path}')
-        os.makedirs(self.path)
+        if not os.path.exists(self.path):
+            os.makedirs(self.path)
+        uuid = str(uuid4())
         self.args = args
-        args.save_to(self.get_path('args.yaml'))
+        args.save_to(self.get_path(uuid + '.args.yaml'))
         logger.remove()
         logger.add(sys.stderr, level='INFO')
-        logger.add(self.get_path('snapshot.log'), level='DEBUG')
+        logger.add(self.get_path(uuid + '.snapshot.log'), level='DEBUG')
 
     def get_path(self, filename):
         return os.path.join(self.path, filename)
