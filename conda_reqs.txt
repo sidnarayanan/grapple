@@ -1,0 +1,12 @@
+numpy
+#torch
+transformers
+pyyaml
+tqdm
+loguru
+ipython
+torchsummary
+pyjet
+scipy
+git+https://github.com/allenai/longformer.git
+matplotlib

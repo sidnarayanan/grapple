@@ -4,6 +4,7 @@ from grapple import utils
 p = utils.ArgumentParser()
 p.add_args(
     '--dataset_pattern', '--output', ('--n_epochs', p.INT),
+    '--checkpoint_path',
     ('--embedding_size', p.INT), ('--hidden_size', p.INT), ('--feature_size', p.INT),
     ('--num_attention_heads', p.INT), ('--intermediate_size', p.INT),
     ('--label_size', p.INT), ('--num_hidden_layers', p.INT), ('--batch_size', p.INT),
@@ -33,6 +34,8 @@ from torch.utils.data import RandomSampler
 import os
 from apex import amp
 from functools import partial
+from glob import glob
+import re
 
 
 def scale_fn(c, decay):
@@ -50,10 +53,8 @@ if __name__ == '__main__':
     to_t = lambda x: torch.Tensor(x).to(device)
     to_lt = lambda x: torch.LongTensor(x).to(device)
 
-    if config.grad_acc is not None:
-        config.batch_size //= config.grad_acc
-    else:
-        config.grad_acc = 1
+    # override
+    config.batch_size = 128 
 
     if torch.cuda.device_count() > 1:
         config.batch_size *= torch.cuda.device_count()
@@ -66,38 +67,52 @@ if __name__ == '__main__':
 
     logger.info(f'Building model')
 
+    def load_checkpoint(path):
+        existing_checkpoints = glob(snapshot.get_path(path))
+        if existing_checkpoints:
+            ckpt = sorted(existing_checkpoints)[-1]
+            config.from_snapshot = ckpt
+            epoch = int(re.sub(r'.*epoch', '', re.sub(r'\.pt$', '', ckpt)))
+            config.epoch_offset = epoch
+            
+            return True 
+        else:
+            return False
+
+    if config.from_snapshot is None:
+        loaded = load_checkpoint('model_weights_best_epoch*pt')
+        if not loaded:
+            # if best doesn't exist, take the latest
+            loaded = load_checkpoint('model_weights_epoch*pt')
+
+    # if config.from_snapshot is None:
+    #     existing_checkpoints = glob(snapshot.get_path('model_weights_epoch*pt'))
+    #     if existing_checkpoints:
+    #         ckpt = sorted(existing_checkpoints)[-1]
+    #         config.from_snapshot = ckpt
+    # if config.from_snapshot is not None:
+    #     epoch = int(re.sub(r'.*epoch', '', re.sub(r'\.pt$', '', config.from_snapshot)))
+    #     config.epoch_offset = epoch
+
     model = Bruno(config)
-    opt = torch.optim.Adam(model.parameters(), lr=config.lr)
     if config.from_snapshot is not None:
-        # original saved file with DataParallel
         state_dicts = torch.load(config.from_snapshot)
-        # create new OrderedDict that does not contain `module.`
-        from collections import OrderedDict
-        model_state_dict = OrderedDict()
-        for k, v in state_dicts['model'].items():
-            name = k
-            if k.startswith('module'):
-                name = k[7:] # remove `module.`
-            model_state_dict[name] = v
-        # load params
-        model.load_state_dict(model_state_dict)
+        if 'model' in state_dicts:
+            state_dicts = state_dicts['model']
+        state_dicts = {re.sub(r'^module\.', '', k):v for k,v in state_dicts.items()}
+        model.load_state_dict(state_dicts)
 
-        opt.load_state_dict(state_dict['opt'])
+        logger.info(f'Model ckpt {config.from_snapshot} loaded.')
 
-        logger.info(f'Snapshot {config.from_snapshot} loaded.')
-
-    # lr = torch.optim.lr_scheduler.ReduceLROnPlateau(
-    #         opt, 
-    #         factor=config.lr_decay,
-    #         patience=3
-    #     )
     metrics = PapuMetrics(config.beta)
     metrics_puppi = PapuMetrics()
     metres = ParticleMETResolution()
+    metresx = ParticleMETResolution(which='x')
+    metresy = ParticleMETResolution(which='y')
     jetres = JetResolution()
 
     model = model.to(device)
-    model, opt = amp.initialize(model, opt, opt_level='O1')
+    model = amp.initialize(model, opt_level='O1')
     if torch.cuda.device_count() > 1:
         logger.info(f'Distributing model across {torch.cuda.device_count()} GPUs')
         model = nn.DataParallel(model)
@@ -127,6 +142,7 @@ if __name__ == '__main__':
         qm = to_lt(batch['mask'] & batch['neutral_mask'])
         cqm = to_lt(batch['mask'] & ~batch['neutral_mask'])
         genmet = batch['genmet'][:, 0]
+        genmetphi = batch['genmet'][:, 1]
 
         if config.pt_weight:
             weight = x[:, :, 0] / x[:, 0, 0].reshape(-1, 1)
@@ -153,33 +169,59 @@ if __name__ == '__main__':
 
         if config.beta:
             p, q = yhat[:, :, 0], yhat[:, :, 1]
-            # logger.info(' '.join([str(x) for x in [p.max(), p.min(), q.max(), q.min()]]))
             yhat = p / (p + q + 1e-5)
 
         score = t2n(torch.clamp(yhat.squeeze(-1), 0, 1))
         charged_mask = ~batch['neutral_mask']
         score[charged_mask] = batch['y'][charged_mask]
 
-        metres.compute(pt=batch['x'][:, :, 0],
-                       phi=batch['x'][:, :, 2],
+        pt = batch['x'][:, :, 0]
+        phi = batch['x'][:, :, 2]
+
+        metres.compute(pt=pt,
+                       phi=phi,
                        w=score,
                        y=batch['y'],
                        baseline=batch['puppi'],
-                       gm=genmet)
+                       gm=genmet,
+                       gmphi=genmetphi)
+
+        metresx.compute(pt=pt,
+                        phi=phi,
+                        w=score,
+                        y=batch['y'],
+                        baseline=batch['puppi'],
+                        gm=genmet * np.cos(genmetphi),
+                        gmphi=np.zeros_like(genmetphi))
+
+        metresy.compute(pt=pt,
+                        phi=phi,
+                        w=score,
+                        y=batch['y'],
+                        baseline=batch['puppi'],
+                        gm=genmet * np.sin(genmetphi),
+                        gmphi=np.zeros_like(genmetphi))
 
         jetres.compute(x=batch['x'],
-                       weight=score,
+                       weights={
+                            'model': score,
+                            'puppi': batch['puppi'],
+                            'truth': batch['y']
+                           },
                        mask=batch['mask'],
                        pt0=batch['jet1'][:,0])
 
 
     avg_loss_tensor /= n_batch
 
-    plot_path = f'{config.plot}/resolution_{e:03d}'
+    plot_path = f'{config.plot}/resolution_inference'
 
     metrics.plot(plot_path + '_model')
     metrics_puppi.plot(plot_path + '_puppi')
     resolution = metres.plot(plot_path + '_met')
+    metresx.plot(plot_path + '_metx')
+    metresy.plot(plot_path + '_mety')
+    jetres.plot(plot_path + '_jet')
 
     avg_loss, avg_acc, avg_posacc, avg_negacc, avg_posfrac = metrics.mean()
     logger.info(f'Epoch {e}: Average fraction of hard particles = {avg_posfrac}')

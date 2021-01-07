@@ -5,15 +5,18 @@ p = utils.ArgumentParser()
 p.add_args(
     '--dataset_pattern', '--output', ('--n_epochs', p.INT),
     '--checkpoint_path',
+    ('--met_constraint', p.FLOAT),
+    ('--num_global_objects', p.INT),
     ('--embedding_size', p.INT), ('--hidden_size', p.INT), ('--feature_size', p.INT),
     ('--num_attention_heads', p.INT), ('--intermediate_size', p.INT),
     ('--label_size', p.INT), ('--num_hidden_layers', p.INT), ('--batch_size', p.INT),
+    ('--num_hidden_groups', p.INT), ('--inner_group_num', p.INT),
     ('--mask_charged', p.STORE_TRUE), ('--lr', {'type': float}),
     ('--attention_band', p.INT),
     ('--epoch_offset', p.INT),
     ('--from_snapshot'),
     ('--lr_schedule', p.STORE_TRUE), '--plot',
-    ('--pt_weight', p.STORE_TRUE), ('--num_max_files', p.INT),
+    ('--pt_weight', p.INT), ('--num_max_files', p.INT),
     ('--num_max_particles', p.INT), ('--dr_adj', p.FLOAT),
     ('--beta', p.STORE_TRUE),
     ('--lr_policy'), ('--grad_acc', p.INT),
@@ -33,13 +36,21 @@ from torch import nn
 from torch.utils.data import RandomSampler
 import os
 from apex import amp
+from apex.optimizers import FusedAdam, FusedLAMB
 from functools import partial
 from glob import glob
 import re
+from transformers.optimization import get_linear_schedule_with_warmup as linear_sched
 
 
 def scale_fn(c, decay):
     return decay ** c
+
+
+def check_mem_stats(device=None):
+    cached = torch.cuda.memory_cached(device) // 1.e9
+    allocated = torch.cuda.memory_allocated(device) // 1.e9
+    logger.info(f'Device {device} memory: {allocated} GB ({cached} GB) allocated (cached)')
 
 
 if __name__ == '__main__':
@@ -61,52 +72,74 @@ if __name__ == '__main__':
     if torch.cuda.device_count() > 1:
         config.batch_size *= torch.cuda.device_count()
 
+    logger.info(f'Computational batch size is {config.batch_size}, accumulated over {config.grad_acc} steps')
+
     logger.info(f'Reading dataset at {config.dataset_pattern}')
+    num_workers = 8
     ds = PapuDataset(config)
     dl = DataLoader(ds, batch_size=config.batch_size, 
-                    collate_fn=PapuDataset.collate_fn)
-    steps_per_epoch = len(ds) // config.batch_size
+                    collate_fn=PapuDataset.collate_fn,
+                    num_workers=num_workers, pin_memory=True)
+    batches_per_epoch = len(ds) // config.batch_size * num_workers
+    steps_per_epoch = batches_per_epoch // config.grad_acc
+
+    config.epoch_offset = 0 
 
     logger.info(f'Building model')
 
-    if config.from_snapshot is None:
-        existing_checkpoints = glob(snapshot.get_path('model_weights_epoch*pt'))
+    def load_checkpoint(path):
+        existing_checkpoints = glob(snapshot.get_path(path))
         if existing_checkpoints:
             ckpt = sorted(existing_checkpoints)[-1]
             config.from_snapshot = ckpt
             epoch = int(re.sub(r'.*epoch', '', re.sub(r'\.pt$', '', ckpt)))
             config.epoch_offset = epoch
+            
+            if config.lr_policy != 'linear':
+                lr_steps = epoch // (4 if config.lr_policy == 'cyclic' else 1)
+                config.lr *= (config.lr_decay ** lr_steps)
+            return True 
+        else:
+            return False
+
+    if config.from_snapshot is None:
+        loaded = load_checkpoint('model_weights_best_epoch*pt')
+        if not loaded:
+            # if best doesn't exist, take the latest
+            loaded = load_checkpoint('model_weights_epoch*pt')
 
     model = Bruno(config)
     if config.from_snapshot is not None:
-        # original saved file with DataParallel
         state_dicts = torch.load(config.from_snapshot)
-        # create new OrderedDict that does not contain `module.`
-        from collections import OrderedDict
-        model_state_dict = OrderedDict()
-        for k, v in state_dicts['model'].items():
-            name = k
-            if k.startswith('module'):
-                name = k[7:] # remove `module.`
-            model_state_dict[name] = v
-        # load params
-        model.load_state_dict(model_state_dict)
+        model.load_state_dict(state_dicts['model'])
 
-        # opt.load_state_dict(state_dicts['opt'])
-        # lr.load_state_dict(state_dicts['lr'])
+        logger.info(f'Model ckpt {config.from_snapshot} loaded.')
 
-        logger.info(f'Snapshot {config.from_snapshot} loaded.')
+    model = model.to(device)
 
-    opt = torch.optim.Adam(model.parameters(), lr=config.lr)
+    # opt = torch.optim.Adam(model.parameters(), lr=config.lr)
+    opt = FusedLAMB(model.parameters(), lr=config.lr) 
+
+    if config.from_snapshot is not None:
+        state_dicts = torch.load(config.from_snapshot)
+        opt.load_state_dict(state_dicts['opt'])
+
     if config.lr_policy == 'exp' or config.lr_policy is None:
         lr = torch.optim.lr_scheduler.ExponentialLR(opt, config.lr_decay)
     elif config.lr_policy == 'cyclic':
         lr = torch.optim.lr_scheduler.CyclicLR(opt, 0, config.lr, step_size_up=steps_per_epoch*2,
                                                scale_fn=partial(scale_fn, decay=config.lr_decay),
                                                cycle_momentum=False)
+    elif config.lr_policy == 'linear':
+        lr = linear_sched(opt, num_warmup_steps=steps_per_epoch*2, num_training_steps=128*steps_per_epoch,
+                          last_epoch=(config.epoch_offset*steps_per_epoch)-1) # 'epoch' here refers to batch for us
 
-    model = model.to(device)
-    model, opt = amp.initialize(model, opt, opt_level='O1')
+    # if config.from_snapshot is not None:
+    #     state_dicts = torch.load(config.from_snapshot)
+    #     opt.load_state_dict(state_dicts['lr'])
+
+    if config.attention_band is not None:
+        model, opt = amp.initialize(model, opt, opt_level='O1')
 
 
     # lr = torch.optim.lr_scheduler.ReduceLROnPlateau(
@@ -114,7 +147,7 @@ if __name__ == '__main__':
     #         factor=config.lr_decay,
     #         patience=3
     #     )
-    metrics = PapuMetrics(config.beta)
+    metrics = PapuMetrics(config.beta, config.met_constraint)
     metrics_puppi = PapuMetrics()
     metres = ParticleMETResolution()
 
@@ -129,6 +162,9 @@ if __name__ == '__main__':
         min_epoch = config.epoch_offset+1
     else:
         min_epoch = 0
+
+    if config.pt_weight is None:
+        config.pt_weight = 0
 
     for e in range(min_epoch, config.n_epochs+min_epoch):
         logger.info(f'Epoch {e}: Start')
@@ -152,10 +188,13 @@ if __name__ == '__main__':
         metrics_puppi.reset()
         metres.reset()
 
+        best_loss = np.inf
+
         avg_loss_tensor = 0
         # tqdm = lambda x, **kwargs: x
         opt.zero_grad()
-        for n_batch, batch in enumerate(tqdm(dl, total=steps_per_epoch)):
+        ready_for_lr = False
+        for n_batch, batch in enumerate(tqdm(dl, total=batches_per_epoch)):
             sparse.VERBOSE = (n_batch == 0)
 
             x = to_t(batch['x'])
@@ -165,32 +204,37 @@ if __name__ == '__main__':
             qm = to_lt(batch['mask'] & batch['neutral_mask'])
             cqm = to_lt(batch['mask'] & ~batch['neutral_mask'])
             genmet = batch['genmet'][:, 0]
+            genmetphi = batch['genmet'][:, 1]
 
-            if config.pt_weight:
-                weight = x[:, :, 0] / x[:, 0, 0].reshape(-1, 1)
-                weight = weight ** 2
+            if config.pt_weight == 0:
+                weight  = None
             else:
-                weight = None
+                weight = x[:, :, 0] / x[:, 0, 0].reshape(-1, 1)
+                weight = weight ** config.pt_weight
 
             if True or e < 3:
                 loss_mask = m 
             else:
                 loss_mask = qm
 
-            yhat = model(x, mask=m)
+            yhat = model(x, attn_mask=m)
             if not config.beta:
                 yhat = torch.sigmoid(yhat)
             else:
                 yhat = torch.relu(yhat)
-            loss, _ = metrics.compute(yhat, y, w=weight, m=loss_mask, plot_m=qm)
+            loss, _ = metrics.compute(yhat, y, w=weight, m=loss_mask, plot_m=qm, x=x)
             loss /= config.grad_acc
-            with amp.scale_loss(loss, opt) as scaled_loss:
-                scaled_loss.backward()
+            if config.attention_band is not None:
+                with amp.scale_loss(loss, opt) as scaled_loss:
+                    scaled_loss.backward()
+            else:
+                loss.backward()
 
             if (n_batch+1) % config.grad_acc == 0:
                 torch.nn.utils.clip_grad_norm_(model.parameters(), 5)
                 opt.step()
                 opt.zero_grad()
+                ready_for_lr = True
 
             metrics_puppi.compute(p, y, w=weight, m=loss_mask, plot_m=qm)
 
@@ -210,16 +254,24 @@ if __name__ == '__main__':
                            w=score,
                            y=batch['y'],
                            baseline=batch['puppi'],
-                           gm=genmet)
+                           gm=genmet,
+                           gmphi=genmetphi)
 
             if config.lr_policy == 'cyclic':
-                lr.step()
-                # current_lr = [group['lr'] for group in opt.param_groups][0]
-                # logger.info(f'Epoch {e}: Step {n_batch}: Current LR = {current_lr}')
+                if ready_for_lr:
+                    lr.step()
+                    # current_lr = [group['lr'] for group in opt.param_groups][0]
+                    # logger.info(f'Epoch {e}: Step {n_batch}: Current LR = {current_lr}')
+
+            if e == 0 & n_batch == 100:
+                check_mem_stats(device)
+
+        check_mem_stats(device)
 
         avg_loss_tensor /= n_batch
         if config.lr_policy != 'cyclic':
-            lr.step()
+            if ready_for_lr:
+                lr.step()
 
         plot_path = f'{config.plot}/resolution_{e:03d}'
 
@@ -232,6 +284,11 @@ if __name__ == '__main__':
         logger.info(f'Epoch {e}: MODEL:')
         logger.info(f'Epoch {e}: Loss = {avg_loss}; Accuracy = {avg_acc}')
         logger.info(f'Epoch {e}: Hard ID = {avg_posacc}; PU ID = {avg_negacc}')
+
+        is_best = False 
+        if avg_loss < best_loss:
+            best_loss = avg_loss
+            is_best = True
         
         avg_loss, avg_acc, avg_posacc, avg_negacc, _ = metrics_puppi.mean()
         logger.info(f'Epoch {e}: PUPPI:')
@@ -247,5 +304,7 @@ if __name__ == '__main__':
                        'lr': lr.state_dict()}
 
         torch.save(state_dicts, snapshot.get_path(f'model_weights_epoch{e:06d}.pt'))
+        if is_best:
+            torch.save(state_dicts, snapshot.get_path(f'model_weights_best_epoch{e:06d}.pt'))
 
         # ds.n_particles = min(2000, ds.n_particles + 50)

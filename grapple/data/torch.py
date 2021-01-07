@@ -5,6 +5,7 @@ from glob import glob
 import numpy as np
 from tqdm import tqdm
 from itertools import chain 
+import math
 
 
 class PUDataset(IterableDataset):
@@ -69,10 +70,20 @@ class PUDataset(IterableDataset):
             puppimet = data['puppimet']
             pfmet = data['pfmet']
 
-            X = X[:, :self.n_particles, :]
-            Y = Y[:, :self.n_particles]
-            P = P[:, :self.n_particles]
-            Q = Q[:, :self.n_particles]
+            n_particles_raw = Y.shape[1]
+
+            if self.n_particles < n_particles_raw:
+                X = X[:, :self.n_particles, :]
+                Y = Y[:, :self.n_particles]
+                P = P[:, :self.n_particles]
+                Q = Q[:, :self.n_particles]
+            elif n_particles_raw < self.n_particles:
+                diff = self.n_particles - n_particles_raw
+                X = np.pad(X, (0, diff, 0))
+                Y = np.pad(Y, (0, diff))
+                P = np.pad(P, (0, diff))
+                Q = np.pad(Q, (0, diff))
+
 
             mask_base = np.arange(X.shape[1])
             idx = np.arange(X.shape[0])
@@ -276,14 +287,33 @@ class PapuDataset(IterableDataset):
         return n_tot
 
     def __iter__(self):
-        np.random.shuffle(self._files)
-        for f in self._files[:self.num_max_files]:
+        files = self._files[:]
+        worker_info = torch.utils.data.get_worker_info()
+        if worker_info is not None:
+            per_worker = int(math.ceil(len(files) / worker_info.num_workers))
+            this_worker = worker_info.id 
+            files = files[this_worker * per_worker : (this_worker+1) * per_worker]
+        np.random.shuffle(files)
+        for f in files[:self.num_max_files]:
             raw_data = np.load(f)
             data = raw_data['x']
             met = raw_data['met']
             jet1 = raw_data['jet1']
+            if 'genz' in raw_data:
+                genz = raw_data['genz']
+            else:
+                genz = np.copy(met)
 
-            data = data[:, :self.n_particles, :]
+            n_particles_raw = data.shape[1] 
+            if n_particles_raw > self.n_particles:
+                data = data[:, :self.n_particles, :]
+            elif n_particles_raw < self.n_particles:
+                diff = self.n_particles - n_particles_raw
+                data = np.pad(
+                        data, 
+                        pad_width=((0, 0), (0, diff), (0, 0)),
+                        mode='constant', constant_values=0
+                    )
 
             X = data[:,:,[i for b,i in self.b2i.items() if b not in ('hardfrac', 'puppi')]]
             y = data[:,:,self.b2i['hardfrac']]
@@ -303,6 +333,7 @@ class PapuDataset(IterableDataset):
                     'mask': mask[i, :], 
                     'neutral_mask': neutral_mask[i, :],
                     'genmet': met[i, :],
+                    'genv': genz[i, :],
                     'jet1': jet1[i, :],
                 }
 
