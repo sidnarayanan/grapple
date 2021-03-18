@@ -1,0 +1,4 @@
+dataset_pattern: /nobackup/users/sidn/puma/split_v4/VBFHcc*npz
+checkpoint_path: /nobackup/users/sidn/puma/expts/4/ttbar_infer/ 
+plot: /nobackup/users/sidn/puma/plots/4/ttbar_infer/vbfh/ 
+from_snapshot: /nobackup/users/bmaier/puma/expts/4/64_final_nopuppi_add_4/2020_07_13_15_16_30/model_weights_epoch150.pt

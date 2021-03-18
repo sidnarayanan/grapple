@@ -1,0 +1,26 @@
+dataset_pattern: /nobackup/users/sidn/puma/merged_v4/merged*npz 
+checkpoint_path: /nobackup/users/sidn/puma/expts/4/smallerbatch_pt2_288/ 
+n_epochs: 10
+
+embedding_size: 64
+hidden_size: 64
+intermediate_size: 64
+feature_size: 11 
+num_hidden_layers: 1
+num_attention_heads: 4
+num_encoders: 6
+label_size: 1
+attention_band: 288
+
+batch_size: 128
+grad_acc: 16
+mask_charged: False
+lr: 0.0005
+lr_decay: 0.97
+lr_policy: 'cyclic'
+num_max_files: 5 
+num_max_particles: 9216
+#min_met: 50
+plot: /nobackup/users/sidn/puma/plots/4/smallerbatch_pt2_w288/train/ 
+pt_weight: 2
+#beta: True

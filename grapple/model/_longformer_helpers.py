@@ -3,6 +3,15 @@ import torch.nn as nn
 import torch.nn.functional as F
 import math
 
+from grapple.utils import t2n
+from apex import amp
+
+
+def catch_nan(tensor, msg):
+    if t2n(torch.isnan(tensor)).sum() > 0:
+        raise RuntimeError(f'Caught NaN at {msg}')
+
+
 def _compute_global_attention_mask(input_ids, sep_token_id, before_sep_token=True):
     """
     Computes global attention mask by putting attention on all tokens before `sep_token_id` if `before_sep_token is
@@ -107,9 +116,12 @@ class LongformerSelfAttention(nn.Module):
         query_vectors = query_vectors.view(seq_len, batch_size, self.num_heads, self.head_dim).transpose(0, 1)
         key_vectors = key_vectors.view(seq_len, batch_size, self.num_heads, self.head_dim).transpose(0, 1)
 
+        catch_nan(query_vectors, 'q')
+        catch_nan(key_vectors, 'k')
         attn_scores = self._sliding_chunks_query_key_matmul(
             query_vectors, key_vectors, self.one_sided_attn_window_size
         )
+        catch_nan(attn_scores, 'attn')
 
         # values to pad for attention probs
         remove_from_windowed_attention_mask = (attention_mask != 0)[:, :, None, None]
@@ -164,6 +176,7 @@ class LongformerSelfAttention(nn.Module):
         # softmax sometimes inserts NaN if all positions are masked, replace them with 0
         attn_probs = torch.masked_fill(attn_probs, is_index_masked[:, :, None, None], 0.0)
         attn_probs = attn_probs.type_as(attn_scores)
+        catch_nan(attn_probs, 'attn_probs')
 
         # free memory
         del attn_scores
@@ -191,6 +204,7 @@ class LongformerSelfAttention(nn.Module):
 
         assert attn_output.size() == (batch_size, seq_len, self.num_heads, self.head_dim), "Unexpected size"
         attn_output = attn_output.transpose(0, 1).reshape(seq_len, batch_size, embed_dim).contiguous()
+        catch_nan(attn_output, 'attn_output')
 
         # compute value for global attention and overwrite to attention output
         # TODO: remove the redundant computation
@@ -222,6 +236,7 @@ class LongformerSelfAttention(nn.Module):
 
         if output_attentions:
             outputs += (attn_probs,)
+        catch_nan(attn_output, 'attn_output_2')
 
         return outputs + (global_attn_probs,) if (is_global_attn and output_attentions) else outputs
 

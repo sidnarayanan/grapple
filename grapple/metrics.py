@@ -457,9 +457,10 @@ class ParticleMETResolution(METResolution):
 
 
 class PapuMetrics(object):
-    def __init__(self, beta=False, met_weight=0):
+    def __init__(self, name='', beta=False, met_weight=0):
         self.met_weight = met_weight
         self.beta = beta 
+        self.name = name
         if not self.beta:
             self.loss_calc = nn.MSELoss(
                     reduction='none'
@@ -523,7 +524,6 @@ class PapuMetrics(object):
         py = pt * torch.sin(phi)
 
         def calc(scale, p):
-            print(scale.shape, pt.shape, p.shape)
             return torch.sum(scale * p, dim=-1)
 
         yhat = yhat.reshape(pt.shape)
@@ -573,7 +573,8 @@ class PapuMetrics(object):
         if nan_mask.sum() > 0:
             yhat = t2n(yhat)
             logger.info(nan_mask)
-            logger.info(yhat[nan_mask])
+            logger.info(yhat)
+            logger.info(y)
             if self.beta:
                 p, q = t2n(p), t2n(q)
                 logger.info(p[nan_mask])

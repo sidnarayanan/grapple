@@ -1,0 +1,3 @@
+dataset_pattern: /nobackup/users/sidn/puma/split_v4/TTBar*npz
+checkpoint_path: /nobackup/users/sidn/puma/expts/4/smallerbatch/ 
+plot: /nobackup/users/sidn/puma/plots/4/smallerbatch/ttbar/ 

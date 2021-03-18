@@ -1,0 +1,53 @@
+2021-01-31 13:30:09.204 | DEBUG    | grapple.utils:parse_args:73 - Config /home/sidn/puma/grapple/scripts/training/papu/global_small.yaml : dataset_pattern -> /nobackup/users/sidn/puma/split_v4/TT*npz
+2021-01-31 13:30:09.205 | DEBUG    | grapple.utils:parse_args:73 - Config /home/sidn/puma/grapple/scripts/training/papu/global_small.yaml : checkpoint_path -> /nobackup/users/sidn/puma/expts/4/global_v0_tt
+2021-01-31 13:30:09.205 | DEBUG    | grapple.utils:parse_args:73 - Config /home/sidn/puma/grapple/scripts/training/papu/global_small.yaml : n_epochs -> 100
+2021-01-31 13:30:09.205 | DEBUG    | grapple.utils:parse_args:73 - Config /home/sidn/puma/grapple/scripts/training/papu/global_small.yaml : embedding_size -> 64
+2021-01-31 13:30:09.205 | DEBUG    | grapple.utils:parse_args:73 - Config /home/sidn/puma/grapple/scripts/training/papu/global_small.yaml : hidden_size -> 64
+2021-01-31 13:30:09.205 | DEBUG    | grapple.utils:parse_args:73 - Config /home/sidn/puma/grapple/scripts/training/papu/global_small.yaml : intermediate_size -> 64
+2021-01-31 13:30:09.205 | DEBUG    | grapple.utils:parse_args:73 - Config /home/sidn/puma/grapple/scripts/training/papu/global_small.yaml : feature_size -> 11
+2021-01-31 13:30:09.205 | DEBUG    | grapple.utils:parse_args:73 - Config /home/sidn/puma/grapple/scripts/training/papu/global_small.yaml : num_hidden_layers -> 12
+2021-01-31 13:30:09.205 | DEBUG    | grapple.utils:parse_args:73 - Config /home/sidn/puma/grapple/scripts/training/papu/global_small.yaml : num_hidden_groups -> 4
+2021-01-31 13:30:09.206 | DEBUG    | grapple.utils:parse_args:73 - Config /home/sidn/puma/grapple/scripts/training/papu/global_small.yaml : inner_group_num -> 1
+2021-01-31 13:30:09.206 | DEBUG    | grapple.utils:parse_args:73 - Config /home/sidn/puma/grapple/scripts/training/papu/global_small.yaml : num_attention_heads -> 4
+2021-01-31 13:30:09.206 | DEBUG    | grapple.utils:parse_args:73 - Config /home/sidn/puma/grapple/scripts/training/papu/global_small.yaml : label_size -> 1
+2021-01-31 13:30:09.206 | DEBUG    | grapple.utils:parse_args:73 - Config /home/sidn/puma/grapple/scripts/training/papu/global_small.yaml : num_global_objects -> 60
+2021-01-31 13:30:09.206 | DEBUG    | grapple.utils:parse_args:73 - Config /home/sidn/puma/grapple/scripts/training/papu/global_small.yaml : attention_band -> 15
+2021-01-31 13:30:09.206 | DEBUG    | grapple.utils:parse_args:73 - Config /home/sidn/puma/grapple/scripts/training/papu/global_small.yaml : met_constraint -> 0
+2021-01-31 13:30:09.206 | DEBUG    | grapple.utils:parse_args:73 - Config /home/sidn/puma/grapple/scripts/training/papu/global_small.yaml : batch_size -> 128
+2021-01-31 13:30:09.206 | DEBUG    | grapple.utils:parse_args:73 - Config /home/sidn/puma/grapple/scripts/training/papu/global_small.yaml : grad_acc -> 8
+2021-01-31 13:30:09.206 | DEBUG    | grapple.utils:parse_args:73 - Config /home/sidn/puma/grapple/scripts/training/papu/global_small.yaml : mask_charged -> True
+2021-01-31 13:30:09.207 | DEBUG    | grapple.utils:parse_args:73 - Config /home/sidn/puma/grapple/scripts/training/papu/global_small.yaml : opt -> adam
+2021-01-31 13:30:09.207 | DEBUG    | grapple.utils:parse_args:73 - Config /home/sidn/puma/grapple/scripts/training/papu/global_small.yaml : lr -> 0.001
+2021-01-31 13:30:09.207 | DEBUG    | grapple.utils:parse_args:73 - Config /home/sidn/puma/grapple/scripts/training/papu/global_small.yaml : lr_decay -> 0.97
+2021-01-31 13:30:09.207 | DEBUG    | grapple.utils:parse_args:73 - Config /home/sidn/puma/grapple/scripts/training/papu/global_small.yaml : lr_policy -> cyclic
+2021-01-31 13:30:09.207 | DEBUG    | grapple.utils:parse_args:73 - Config /home/sidn/puma/grapple/scripts/training/papu/global_small.yaml : num_max_files -> 1
+2021-01-31 13:30:09.207 | DEBUG    | grapple.utils:parse_args:73 - Config /home/sidn/puma/grapple/scripts/training/papu/global_small.yaml : num_max_particles -> 9000
+2021-01-31 13:30:09.207 | DEBUG    | grapple.utils:parse_args:73 - Config /home/sidn/puma/grapple/scripts/training/papu/global_small.yaml : plot -> /nobackup/users/sidn/puma/plots/4/global_v0_tt/train/
+2021-01-31 13:30:09.208 | DEBUG    | grapple.utils:parse_args:73 - Config /home/sidn/puma/grapple/scripts/training/papu/global_small.yaml : pt_weight -> 2
+2021-01-31 13:30:09.208 | DEBUG    | grapple.utils:parse_args:73 - Config /home/sidn/puma/grapple/scripts/training/papu/global_small.yaml : amp -> False
+I0131 13:30:10.632282 35184372370976 file_utils.py:35] PyTorch version 1.2.0 available.
+2021-01-31 13:30:12.391 | INFO     | grapple.utils:__init__:91 - Snapshot placed at /nobackup/users/sidn/puma/expts/4/global_v0_tt
+2021-01-31 13:30:12.402 | INFO     | __main__:<module>:61 - Saving output to /nobackup/users/sidn/puma/expts/4/global_v0_tt
+2021-01-31 13:30:12.571 | INFO     | __main__:<module>:77 - Computational batch size is 64, accumulated over 8 steps
+2021-01-31 13:30:12.571 | INFO     | __main__:<module>:79 - Reading dataset at /nobackup/users/sidn/puma/split_v4/TT*npz
+2021-01-31 13:30:12.593 | INFO     | __main__:<module>:90 - Building model
+Traceback (most recent call last):
+  File "/home/sidn/puma/grapple/scripts/training/papu/train_pu.py", line 113, in <module>
+    model = Bruno(config)
+  File "/home/sidn/puma/grapple/grapple/model/sparse.py", line 379, in __init__
+    self.encoder = OskarTransformer(config)
+  File "/home/sidn/puma/grapple/grapple/model/sparse.py", line 241, in __init__
+    self.albert_layer_groups = nn.ModuleList([OskarLayerGroup(config) for _ in range(config.num_hidden_groups)])
+  File "/home/sidn/puma/grapple/grapple/model/sparse.py", line 241, in <listcomp>
+    self.albert_layer_groups = nn.ModuleList([OskarLayerGroup(config) for _ in range(config.num_hidden_groups)])
+  File "/home/sidn/puma/grapple/grapple/model/sparse.py", line 207, in __init__
+    self.albert_layers = nn.ModuleList([OskarLayer(config) for _ in range(config.inner_group_num)])
+  File "/home/sidn/puma/grapple/grapple/model/sparse.py", line 207, in <listcomp>
+    self.albert_layers = nn.ModuleList([OskarLayer(config) for _ in range(config.inner_group_num)])
+  File "/home/sidn/puma/grapple/grapple/model/sparse.py", line 174, in __init__
+    self.attention = OskarAttention(config)
+  File "/home/sidn/puma/grapple/grapple/model/sparse.py", line 60, in __init__
+    super().__init__(config)
+  File "/home/sidn/puma/grapple/grapple/model/_longformer_helpers.py", line 75, in __init__
+    ), f"`attention_band` for layer has to be an even value. Given {attention_band}"
+AssertionError: `attention_band` for layer has to be an even value. Given 15

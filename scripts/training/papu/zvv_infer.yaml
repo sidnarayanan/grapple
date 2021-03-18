@@ -1,0 +1,4 @@
+dataset_pattern: /nobackup/users/sidn/puma/zvv_v4/ZvvJets_HighPT.npz 
+checkpoint_path: /nobackup/users/sidn/puma/expts/4/smallerbatch/ 
+plot: /nobackup/users/sidn/puma/plots/4/smallerbatch/zvv/ 
+#num_max_particles: 100

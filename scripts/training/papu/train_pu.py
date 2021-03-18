@@ -20,6 +20,8 @@ p.add_args(
     ('--num_max_particles', p.INT), ('--dr_adj', p.FLOAT),
     ('--beta', p.STORE_TRUE),
     ('--lr_policy'), ('--grad_acc', p.INT),
+    ('--amp', p.STORE_TRUE),
+    ('--opt'),
 )
 config = p.parse_args()
 
@@ -75,7 +77,7 @@ if __name__ == '__main__':
     logger.info(f'Computational batch size is {config.batch_size}, accumulated over {config.grad_acc} steps')
 
     logger.info(f'Reading dataset at {config.dataset_pattern}')
-    num_workers = 8
+    num_workers = 4
     ds = PapuDataset(config)
     dl = DataLoader(ds, batch_size=config.batch_size, 
                     collate_fn=PapuDataset.collate_fn,
@@ -117,8 +119,10 @@ if __name__ == '__main__':
 
     model = model.to(device)
 
-    # opt = torch.optim.Adam(model.parameters(), lr=config.lr)
-    opt = FusedLAMB(model.parameters(), lr=config.lr) 
+    if config.opt in ('adam', None):
+        opt = torch.optim.Adam(model.parameters(), lr=config.lr)
+    else:
+        opt = FusedLAMB(model.parameters(), lr=config.lr) 
 
     if config.from_snapshot is not None:
         state_dicts = torch.load(config.from_snapshot)
@@ -131,14 +135,14 @@ if __name__ == '__main__':
                                                scale_fn=partial(scale_fn, decay=config.lr_decay),
                                                cycle_momentum=False)
     elif config.lr_policy == 'linear':
-        lr = linear_sched(opt, num_warmup_steps=steps_per_epoch*2, num_training_steps=128*steps_per_epoch,
+        lr = linear_sched(opt, num_warmup_steps=steps_per_epoch*1, num_training_steps=128*steps_per_epoch,
                           last_epoch=(config.epoch_offset*steps_per_epoch)-1) # 'epoch' here refers to batch for us
 
     # if config.from_snapshot is not None:
     #     state_dicts = torch.load(config.from_snapshot)
     #     opt.load_state_dict(state_dicts['lr'])
 
-    if config.attention_band is not None:
+    if config.attention_band is not None and config.amp:
         model, opt = amp.initialize(model, opt, opt_level='O1')
 
 
@@ -147,8 +151,8 @@ if __name__ == '__main__':
     #         factor=config.lr_decay,
     #         patience=3
     #     )
-    metrics = PapuMetrics(config.beta, config.met_constraint)
-    metrics_puppi = PapuMetrics()
+    metrics = PapuMetrics('model', config.beta, config.met_constraint)
+    metrics_puppi = PapuMetrics('puppi')
     metres = ParticleMETResolution()
 
     if torch.cuda.device_count() > 1:
@@ -224,7 +228,7 @@ if __name__ == '__main__':
                 yhat = torch.relu(yhat)
             loss, _ = metrics.compute(yhat, y, w=weight, m=loss_mask, plot_m=qm, x=x)
             loss /= config.grad_acc
-            if config.attention_band is not None:
+            if config.attention_band is not None and config.amp:
                 with amp.scale_loss(loss, opt) as scaled_loss:
                     scaled_loss.backward()
             else:

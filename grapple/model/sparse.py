@@ -35,6 +35,7 @@ from typing import *
 import math
 
 from transformers.modeling_bert import ACT2FN, BertEmbeddings, BertSelfAttention, prune_linear_layer, gelu_new
+from apex import amp
 
 from longformer.diagonaled_mm_tvm import diagonaled_mm as diagonaled_mm_tvm, mask_invalid_locations
 from longformer.sliding_chunks import sliding_chunks_matmul_qk, sliding_chunks_matmul_pv
@@ -42,10 +43,15 @@ from longformer.sliding_chunks import sliding_chunks_matmul_qk, sliding_chunks_m
 
 from .met_layer import METLayer
 from ._longformer_helpers import * 
+from grapple.utils import t2n
 
 
 VERBOSE = False
 
+
+def catch_nan(tensor, msg):
+    if t2n(torch.isnan(tensor)).sum() > 0:
+        raise RuntimeError(f'Caught NaN at {msg}')
 
 
 
@@ -242,7 +248,7 @@ class OskarTransformer(nn.Module):
         if self.output_hidden_states:
             all_hidden_states = (hidden_states,)
 
-        attention_mask = attention_mask.type(hidden_states.dtype)
+        # attention_mask = attention_mask.type(hidden_states.dtype)
         is_index_masked = attention_mask < 0
         is_index_global_attn = attention_mask > 0
         is_global_attn = is_index_global_attn.flatten().any().item()
